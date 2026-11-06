@@ -92,6 +92,6 @@ Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `sta
 
 ## Third-party assets
 
-The image uses the [Inter](https://github.com/rsms/inter) font (`assets/Inter-Regular.otf`, `assets/Inter-Bold.otf`), Copyright (c) 2016 The Inter Project Authors, licensed under the SIL Open Font License 1.1. The full license is in `assets/OFL.txt` and must be kept with the font, including in binary releases.
+The image uses the [Inter](https://github.com/rsms/inter) font (`assets/Inter-Regular.otf`, `assets/Inter-Bold.otf`), Copyright (c) 2016 The Inter Project Authors, licensed under the SIL Open Font License 1.1. The full license is in `assets/OFL-Inter.txt` and must be kept with the font, including in binary releases.
 
 The main figure uses [Tiny5 Mono](https://github.com/Gissio/font_Tiny5Mono) Regular (`assets/Tiny5Mono-Regular.otf`), also licensed under the SIL Open Font License 1.1. Its license is in `assets/OFL-Tiny5Mono.txt` and must likewise be kept with the font.

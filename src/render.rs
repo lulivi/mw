@@ -13,7 +13,7 @@ use resvg::{tiny_skia, usvg};
 
 use crate::stats::{RankBy, Ranked, Stats};
 
-/// Inter (SIL Open Font License 1.1, see assets/OFL.txt), embedded so the image
+/// Inter (SIL Open Font License 1.1, see assets/OFL-Inter.txt), embedded so the image
 /// looks the same on every machine.
 const FONT_REGULAR: &[u8] = include_bytes!("../assets/Inter-Regular.otf");
 const FONT_BOLD: &[u8] = include_bytes!("../assets/Inter-Bold.otf");
