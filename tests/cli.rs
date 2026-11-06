@@ -97,6 +97,35 @@ fn color_changes_the_image() {
 }
 
 #[test]
+fn keeps_an_existing_image_unless_overwriting() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("w.png");
+    std::fs::write(&out, "keep me").unwrap();
+    let run = |args: &[&str]| {
+        bin()
+            .env_remove("YT_API_KEY")
+            .arg("--spotify")
+            .arg(fixtures().join("spotify"))
+            .arg("--out")
+            .arg(&out)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let refused = run(&[]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--overwrite"));
+    assert_eq!(std::fs::read(&out).unwrap(), b"keep me");
+
+    assert!(run(&["--no-image"]).status.success());
+    assert_eq!(std::fs::read(&out).unwrap(), b"keep me");
+
+    assert!(run(&["--overwrite"]).status.success());
+    assert_eq!(&std::fs::read(&out).unwrap()[1..4], b"PNG");
+}
+
+#[test]
 fn clear_errors() {
     // No sources
     let o = bin().arg("--no-image").output().unwrap();

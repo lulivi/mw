@@ -72,7 +72,8 @@ To have `mw` available from any folder, install it with `cargo install --path .`
 | `--yt-api-key <KEY>` | YouTube Data API v3 key to use each song's real length (also `YT_API_KEY`) | — |
 | `--yt-cache <FILE>` | Durations cache | `yt-durations.json` next to `watch-history.json` |
 | `--ytm-max-minutes <F>` | Cap per play with real length (for long mixes and livestreams) | 15 |
-| `--out <FILE>` | PNG file name | `wrapped_<range>.png` |
+| `--out <FILE>` | PNG file name | `wrapped.png` |
+| `--overwrite` | Replace the PNG if it already exists; without it, the program stops with an error | — |
 | `--no-image` | Only print the stats in the terminal | — |
 
 ## How it counts

@@ -82,9 +82,13 @@ struct Cli {
     #[arg(long, default_value_t = 15.0)]
     ytm_max_minutes: f64,
 
-    /// Output PNG (default: wrapped_<range>.png)
-    #[arg(long, value_name = "FILE")]
-    out: Option<PathBuf>,
+    /// Output PNG
+    #[arg(long, value_name = "FILE", default_value = "wrapped.png")]
+    out: PathBuf,
+
+    /// Replace the output PNG if it already exists
+    #[arg(long)]
+    overwrite: bool,
 
     /// Only print the stats in the terminal
     #[arg(long)]
@@ -136,7 +140,8 @@ enum RankArg {
 /// Runs the program: loads the plays, prints the stats and saves the image unless
 /// `--no-image` was given.
 ///
-/// Fails on invalid paths or dates, or when no plays are left after filtering.
+/// Fails on invalid paths or dates, when the image already exists and `--overwrite`
+/// wasn't given, or when no plays are left after filtering.
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -166,6 +171,12 @@ fn main() -> Result<()> {
         && f > t
     {
         bail!("--from ({f}) is after --to ({t})");
+    }
+    if !cli.no_image && !cli.overwrite && cli.out.exists() {
+        bail!(
+            "{} already exists; use --overwrite or choose another name with --out",
+            cli.out.display()
+        );
     }
 
     // Load sources
@@ -204,12 +215,9 @@ fn main() -> Result<()> {
     print_stats(&stats);
 
     if !cli.no_image {
-        let out = cli
-            .out
-            .unwrap_or_else(|| default_out(&stats, from.is_some() || to.is_some()));
         let svg = render::build_svg(&stats, rank_by, cli.color.hex())?;
-        render::save_png(&svg, &out)?;
-        println!("\nImage saved to {}", out.display());
+        render::save_png(&svg, &cli.out)?;
+        println!("\nImage saved to {}", cli.out.display());
     }
     Ok(())
 }
@@ -281,19 +289,6 @@ fn report(name: &str, n: usize, warnings: &[String]) {
     for w in warnings {
         eprintln!("  warning: {w}");
     }
-}
-
-/// Default image name: `wrapped_all.png` without date filters, `wrapped_<year>.png`
-/// for a whole year, and `wrapped_<from>_<to>.png` for any other range.
-fn default_out(s: &Stats, filtered: bool) -> PathBuf {
-    let label = if !filtered {
-        "all".to_string()
-    } else if range_label(s.from, s.to).len() == 4 {
-        range_label(s.from, s.to)
-    } else {
-        format!("{}_{}", s.from, s.to)
-    };
-    PathBuf::from(format!("wrapped_{label}.png"))
 }
 
 /// Prints the full recap to stdout, including what the image leaves out (every
