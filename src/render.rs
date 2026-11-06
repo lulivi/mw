@@ -16,6 +16,9 @@ use crate::stats::{Ranked, Stats};
 /// looks the same on every machine.
 const FONT_REGULAR: &[u8] = include_bytes!("../assets/Inter-Regular.otf");
 const FONT_BOLD: &[u8] = include_bytes!("../assets/Inter-Bold.otf");
+/// Tiny5 Mono Bold (SIL Open Font License 1.1, see assets/OFL-Tiny5Mono.txt),
+/// used only for the main figure. Its pixel rows are crisp at multiples of 8 px.
+const FONT_NUMBER: &[u8] = include_bytes!("../assets/Tiny5Mono-Bold.otf");
 
 const W: f32 = 1080.0;
 const H: f32 = 1920.0;
@@ -24,7 +27,7 @@ const RIGHT: f32 = W - 90.0;
 
 const BG: &str = "#101418";
 const INK: &str = "#F4F5F7";
-const QUIET: &str = "#9AA3AD";
+const QUIET: &str = "#B8C0C8";
 const ACCENT: &str = "#FF6B4A";
 const BAR: &str = "#2C343D";
 
@@ -90,6 +93,20 @@ fn esc(s: &str) -> String {
 struct Measure {
     regular: ttf_parser::Face<'static>,
     bold: ttf_parser::Face<'static>,
+    number: ttf_parser::Face<'static>,
+}
+
+fn face_width(face: &ttf_parser::Face, text: &str, size: f32) -> f32 {
+    let upem = face.units_per_em() as f32;
+    let units: f32 = text
+        .chars()
+        .map(|c| {
+            face.glyph_index(c)
+                .and_then(|g| face.glyph_hor_advance(g))
+                .unwrap_or((upem * 0.6) as u16) as f32
+        })
+        .sum();
+    units * size / upem
 }
 
 impl Measure {
@@ -97,21 +114,12 @@ impl Measure {
         Ok(Self {
             regular: ttf_parser::Face::parse(FONT_REGULAR, 0).context("regular font")?,
             bold: ttf_parser::Face::parse(FONT_BOLD, 0).context("bold font")?,
+            number: ttf_parser::Face::parse(FONT_NUMBER, 0).context("number font")?,
         })
     }
 
     fn width(&self, text: &str, size: f32, bold: bool) -> f32 {
-        let face = if bold { &self.bold } else { &self.regular };
-        let upem = face.units_per_em() as f32;
-        let units: f32 = text
-            .chars()
-            .map(|c| {
-                face.glyph_index(c)
-                    .and_then(|g| face.glyph_hor_advance(g))
-                    .unwrap_or((upem * 0.6) as u16) as f32
-            })
-            .sum();
-        units * size / upem
+        face_width(if bold { &self.bold } else { &self.regular }, text, size)
     }
 
     /// Truncates the text so it fits in `max` px, adding "…".
@@ -191,36 +199,21 @@ pub fn build_svg(s: &Stats) -> Result<String> {
         &m.fit(&range, range_size, true, RIGHT - LEFT),
     );
 
-    // Main figure ("≈" smaller and grey when there are estimated minutes)
+    // Main figure
     let number = fmt_int(minutes(s.total_ms));
-    let mut big_size: f32 = 150.0;
-    let approx_w = |size: f32| {
-        if estimated {
-            m.width("≈ ", size * 0.55, true)
-        } else {
-            0.0
-        }
-    };
-    while approx_w(big_size) + m.width(&number, big_size, true) > RIGHT - LEFT && big_size > 80.0 {
-        big_size -= 10.0;
+    let mut big_size: f32 = 144.0;
+    while face_width(&m.number, &number, big_size) > RIGHT - LEFT && big_size > 80.0 {
+        big_size -= 8.0;
     }
-    let approx = if estimated {
-        format!(
-            "<tspan font-size='{:.0}' fill='{QUIET}'>≈ </tspan>",
-            big_size * 0.55
-        )
-    } else {
-        String::new()
-    };
     svg.body.push_str(&format!(
-        "<text x='{LEFT}' y='495' font-size='{big_size}' font-weight='700' fill='{INK}'>{approx}{}</text>\n",
+        "<text x='{LEFT}' y='495' font-size='{big_size}' font-family='Tiny5 Mono' font-weight='700' fill='{INK}'>{}</text>\n",
         esc(&number)
     ));
-    svg.text(LEFT, 548.0, 38.0, false, INK, "start", "minutes listened");
+    svg.text(LEFT, 564.0, 38.0, false, INK, "start", "minutes listened");
     let hours = (s.total_ms as f64 / 3_600_000.0).round() as u64;
     svg.text(
         LEFT,
-        594.0,
+        606.0,
         32.0,
         false,
         QUIET,
@@ -229,14 +222,14 @@ pub fn build_svg(s: &Stats) -> Result<String> {
     );
 
     // Chart by month (or by year for long ranges)
-    chart(&mut svg, s, 660.0);
+    chart(&mut svg, s, 664.0);
 
     // Tops
-    let y = list(&mut svg, &m, "Top artists", &s.top_artists, 935.0);
-    let y = list(&mut svg, &m, "Top songs", &s.top_tracks, y + 80.0);
+    let y = list(&mut svg, &m, "Top artists", &s.top_artists, 926.0);
+    let y = list(&mut svg, &m, "Top songs", &s.top_tracks, y + 72.0);
 
     // Extra facts and footer, below the top lists
-    let mut y = y + 62.0;
+    let mut y = y + 52.0;
     let mut extra = format!(
         "{} artists · {} songs",
         fmt_int(s.distinct_artists as u64),
@@ -271,12 +264,12 @@ pub fn build_svg(s: &Stats) -> Result<String> {
             .unwrap_or_default()
     };
     // One line: split by source and, if needed, the estimate note.
-    let foot = match (estimated, s.by_source.len() > 1) {
-        (false, _) => split,
-        (true, true) => format!("{split} (≈ estimated)"),
-        (true, false) => format!("{split} · ≈ estimated minutes"),
+    let foot = if estimated {
+        format!("{split} · estimated minutes")
+    } else {
+        split
     };
-    y += 42.0;
+    y += 40.0;
     svg.text(
         LEFT,
         y,
@@ -346,25 +339,13 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
     }
     // Value of the top month (or year), above its bar.
     let cx = LEFT + slot * (max_i as f32 + 0.5);
-    let anchor = if cx < LEFT + 120.0 {
-        "start"
-    } else if cx > RIGHT - 120.0 {
-        "end"
-    } else {
-        "middle"
-    };
-    let lx = match anchor {
-        "start" => cx - bw / 2.0,
-        "end" => cx + bw / 2.0,
-        _ => cx,
-    };
     svg.text(
-        lx,
+        cx,
         top - 14.0,
         32.0,
         true,
         ACCENT,
-        anchor,
+        "middle",
         &fmt_int(minutes(max)),
     );
 }
@@ -372,8 +353,8 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
 /// Draws a top list and returns the y where it ends.
 fn list(svg: &mut Svg, m: &Measure, title: &str, items: &[Ranked], y0: f32) -> f32 {
     svg.text(LEFT, y0, 40.0, true, ACCENT, "start", title);
-    let row_h = 52.0;
-    let mut y = y0 + 64.0;
+    let row_h = 56.0;
+    let mut y = y0 + 60.0;
     for (i, item) in items.iter().take(IMAGE_TOP).enumerate() {
         let num = format!("{}", i + 1);
         svg.text(LEFT, y, 36.0, true, ACCENT, "start", &num);
@@ -416,6 +397,7 @@ pub fn save_png(svg: &str, out: &Path) -> Result<()> {
         let db = Arc::make_mut(&mut opt.fontdb);
         db.load_font_data(FONT_REGULAR.to_vec());
         db.load_font_data(FONT_BOLD.to_vec());
+        db.load_font_data(FONT_NUMBER.to_vec());
     }
     let tree = usvg::Tree::from_str(svg, &opt).context("invalid SVG")?;
     let mut pixmap =

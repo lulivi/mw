@@ -77,8 +77,8 @@ To have `mw` available from any folder, install it with `cargo install --path .`
 ## How it counts
 
 - Spotify plays shorter than 30 seconds don't count (they're skips), same as the official Wrapped. Podcasts and audiobooks are ignored.
-- YouTube Music doesn't record how long you listened to each song, only that you played it. Each play counts `--ytm-avg-minutes` minutes, which is why the total shows "≈" when YouTube Music is included.
-- With `--yt-api-key`, each YouTube Music song counts its real length (capped at 15 min) and the "≈" goes away. It assumes you listened to the whole song. Songs that can't be looked up (deleted videos, no connection, quota exhausted) keep the estimate.
+- YouTube Music doesn't record how long you listened to each song, only that you played it. Each play counts `--ytm-avg-minutes` minutes, which is why the total is marked as estimated when YouTube Music is included ("≈" in the terminal, "estimated minutes" in the image).
+- With `--yt-api-key`, each YouTube Music song counts its real length (capped at 15 min) and that mark goes away. It assumes you listened to the whole song. Songs that can't be looked up (deleted videos, no connection, quota exhausted) keep the estimate.
 - Artists and songs are merged across sources ignoring case, accents, spaces and YouTube channel add-ons (" - Topic", "VEVO", "Official"). Title add-ons like "(Official Video)" are ignored, and a leading "Artist - " is removed from YouTube titles. "(Remix)" and "(feat. …)" are kept.
 
 ## Development
@@ -87,8 +87,10 @@ To have `mw` available from any folder, install it with `cargo install --path .`
 cargo test
 ```
 
-Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `durations.rs` fetches real YouTube lengths, and `normalize.rs` builds the keys that merge artists and songs. The Inter font is embedded in the binary so the image looks the same everywhere.
+Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `durations.rs` fetches real YouTube lengths, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
 
 ## Third-party assets
 
 The image uses the [Inter](https://github.com/rsms/inter) font (`assets/Inter-Regular.otf`, `assets/Inter-Bold.otf`), Copyright (c) 2016 The Inter Project Authors, licensed under the SIL Open Font License 1.1. The full license is in `assets/OFL.txt` and must be kept with the font, including in binary releases.
+
+The main figure uses [Tiny5 Mono](https://github.com/Gissio/font_Tiny5Mono) Bold (`assets/Tiny5Mono-Bold.otf`), also licensed under the SIL Open Font License 1.1. Its license is in `assets/OFL-Tiny5Mono.txt` and must likewise be kept with the font.
