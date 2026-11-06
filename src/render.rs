@@ -26,6 +26,8 @@ const H: f32 = 1920.0;
 const LEFT: f32 = 60.0;
 const RIGHT: f32 = W - 60.0;
 const CENTER: f32 = W / 2.0;
+/// Where the chart and the artists column start; the chart ends as far from the right.
+const INNER_LEFT: f32 = 90.0;
 
 const BG: &str = "#101418";
 const INK: &str = "#AEB5BD";
@@ -281,7 +283,6 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> 
 
     // Tops
     const LISTS_Y: f32 = 1140.0;
-    const ARTISTS_X: f32 = 90.0;
     const SONGS_X: f32 = CENTER;
     let artists_end = list(
         &mut svg,
@@ -289,8 +290,8 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> 
         "Top artists",
         &s.top_artists,
         by,
-        ARTISTS_X,
-        SONGS_X - ARTISTS_X - 20.0,
+        INNER_LEFT,
+        SONGS_X - INNER_LEFT - 20.0,
         LISTS_Y,
     );
     let songs_end = list(
@@ -398,12 +399,17 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
     let max_i = bars.iter().position(|b| b.1 == max).unwrap_or(0);
     let top = y0 + 66.0;
     let base = y0 + 226.0;
-    let area = RIGHT - LEFT;
-    let slot = area / bars.len() as f32;
-    let bw = (slot * 0.7).min(80.0);
+    // The bars fill the available width up to a maximum, centered as a group.
+    const GAP: f32 = 16.0;
+    const MAX_BAR_W: f32 = 180.0;
+    let n = bars.len() as f32;
+    let area = W - 2.0 * INNER_LEFT;
+    let bw = ((area + GAP) / n - GAP).min(MAX_BAR_W);
+    let slot = bw + GAP;
+    let start = CENTER - (n * slot - GAP) / 2.0;
 
     for (i, (label, ms)) in bars.iter().enumerate() {
-        let cx = LEFT + slot * (i as f32 + 0.5);
+        let cx = start + slot * i as f32 + bw / 2.0;
         let h = ((*ms as f32 / max as f32) * (base - top)).max(if *ms > 0 { 6.0 } else { 2.0 });
         let fill = if i == max_i { svg.accent } else { BAR };
         svg.rect(cx - bw / 2.0, base - h, bw, h, (bw / 6.0).min(8.0), fill);
@@ -419,7 +425,7 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
         );
     }
     // Value of the top month (or year), above its bar.
-    let cx = LEFT + slot * (max_i as f32 + 0.5);
+    let cx = start + slot * max_i as f32 + bw / 2.0;
     svg.text(
         cx,
         top - 14.0,
