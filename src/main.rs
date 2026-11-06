@@ -13,7 +13,7 @@ use chrono_tz::Tz;
 use clap::{Parser, ValueEnum};
 
 use model::{Play, Source};
-use render::{fmt_int, minutes, range_label};
+use render::{fmt_count, fmt_int, minutes, range_label};
 use stats::{Filters, RankBy, Stats};
 
 /// Music Wrapped: your listening recap from your Spotify and YouTube Music data exports.
@@ -49,7 +49,7 @@ struct Cli {
     top: usize,
 
     /// How to rank the top lists
-    #[arg(long, value_enum, default_value_t = RankArg::Minutes)]
+    #[arg(long, value_enum, default_value_t = RankArg::Plays)]
     rank_by: RankArg,
 
     /// Time zone used to group by day and month
@@ -164,7 +164,7 @@ fn main() -> Result<()> {
         let out = cli
             .out
             .unwrap_or_else(|| default_out(&stats, from.is_some() || to.is_some()));
-        let svg = render::build_svg(&stats)?;
+        let svg = render::build_svg(&stats, rank_by)?;
         render::save_png(&svg, &out)?;
         println!("\nImage saved to {}", out.display());
     }
@@ -233,7 +233,7 @@ fn wants(filter: Option<Source>, s: Source) -> bool {
 }
 
 fn report(name: &str, n: usize, warnings: &[String]) {
-    eprintln!("{name}: {} plays loaded", fmt_int(n as u64));
+    eprintln!("{name}: {} loaded", fmt_count(n as u64, "play"));
     for w in warnings {
         eprintln!("  warning: {w}");
     }
@@ -254,9 +254,9 @@ fn print_stats(s: &Stats) {
     let approx = if s.estimated_ms > 0 { "≈ " } else { "" };
     println!("\n== {} ==", range_label(s.from, s.to));
     println!(
-        "Minutes listened: {approx}{}  ({} plays)",
+        "Minutes listened: {approx}{}  ({})",
         fmt_int(minutes(s.total_ms)),
-        fmt_int(s.plays)
+        fmt_count(s.plays, "play")
     );
     if s.estimated_ms > 0 {
         println!(
@@ -281,23 +281,23 @@ fn print_stats(s: &Stats) {
     println!("\nTop artists:");
     for (i, a) in s.top_artists.iter().enumerate() {
         println!(
-            "  {:>2}. {}  ({} min, {} plays)",
+            "  {:>2}. {}  ({} min, {})",
             i + 1,
             a.name,
             fmt_int(minutes(a.ms)),
-            fmt_int(a.plays)
+            fmt_count(a.plays, "play")
         );
     }
     println!("\nTop songs:");
     for (i, t) in s.top_tracks.iter().enumerate() {
         let artist = t.detail.as_deref().unwrap_or("");
         println!(
-            "  {:>2}. {} · {}  ({} min, {} plays)",
+            "  {:>2}. {} · {}  ({} min, {})",
             i + 1,
             t.name,
             artist,
             fmt_int(minutes(t.ms)),
-            fmt_int(t.plays)
+            fmt_count(t.plays, "play")
         );
     }
 

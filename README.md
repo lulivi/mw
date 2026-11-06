@@ -65,7 +65,7 @@ To have `mw` available from any folder, install it with `cargo install --path .`
 | `--year <YYYY>` | Whole calendar year | — |
 | `--from` / `--to <YYYY-MM-DD>` | Date range, both days included | whole history |
 | `--top <N>` | Size of the top lists in the terminal (the image shows 5) | 5 |
-| `--rank-by minutes\|plays` | Rank top lists by minutes or by plays | `minutes` |
+| `--rank-by minutes\|plays` | Rank top lists by minutes or by plays; the image shows that figure for each song | `plays` |
 | `--tz <zone>` | Time zone used to group by day and month | `Europe/Madrid` |
 | `--ytm-avg-minutes <F>` | Minutes counted per YouTube Music play | 3.5 |
 | `--yt-api-key <KEY>` | YouTube Data API v3 key to use each song's real length (also `YT_API_KEY`) | — |
@@ -93,4 +93,4 @@ Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `sta
 
 The image uses the [Inter](https://github.com/rsms/inter) font (`assets/Inter-Regular.otf`, `assets/Inter-Bold.otf`), Copyright (c) 2016 The Inter Project Authors, licensed under the SIL Open Font License 1.1. The full license is in `assets/OFL.txt` and must be kept with the font, including in binary releases.
 
-The main figure uses [Tiny5 Mono](https://github.com/Gissio/font_Tiny5Mono) Bold (`assets/Tiny5Mono-Bold.otf`), also licensed under the SIL Open Font License 1.1. Its license is in `assets/OFL-Tiny5Mono.txt` and must likewise be kept with the font.
+The main figure uses [Tiny5 Mono](https://github.com/Gissio/font_Tiny5Mono) Regular (`assets/Tiny5Mono-Regular.otf`), also licensed under the SIL Open Font License 1.1. Its license is in `assets/OFL-Tiny5Mono.txt` and must likewise be kept with the font.
