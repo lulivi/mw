@@ -16,22 +16,37 @@ use crate::stats::{RankBy, Ranked, Stats};
 /// Inter (SIL Open Font License 1.1, see assets/OFL-Inter.txt), embedded so the image
 /// looks the same on every machine.
 const FONT_REGULAR: &[u8] = include_bytes!("../assets/Inter-Regular.otf");
+/// Inter Bold, embedded like [`FONT_REGULAR`].
 const FONT_BOLD: &[u8] = include_bytes!("../assets/Inter-Bold.otf");
 /// Tiny5 Mono Regular (SIL Open Font License 1.1, see assets/OFL-Tiny5Mono.txt),
 /// used only for the main figure. Its pixel rows are crisp at multiples of 8 px.
 const FONT_NUMBER: &[u8] = include_bytes!("../assets/Tiny5Mono-Regular.otf");
 
+/// Image width in px.
 const W: f32 = 1080.0;
+/// Image height in px.
 const H: f32 = 1920.0;
+/// Left limit of the text.
 const LEFT: f32 = 60.0;
+/// Right limit of the text.
 const RIGHT: f32 = W - 60.0;
+/// Horizontal center of the image.
 const CENTER: f32 = W / 2.0;
+/// Width of a Tiny5 Mono cell in font pixels. Each one ends in a blank pixel column,
+/// so the main figure is shifted half a pixel to the right to look centered.
+const NUMBER_CELL_PIXELS: f32 = 6.0;
+/// Font pixels that [`tight_commas`] saves per comma.
+const COMMA_SAVED_PIXELS: f32 = 3.0;
 /// Where the chart and the artists column start; the chart ends as far from the right.
 const INNER_LEFT: f32 = 90.0;
 
+/// Background color.
 const BG: &str = "#101418";
+/// Color of the date, titles, names and ranks.
 const INK: &str = "#AEB5BD";
+/// Color of secondary text.
 const QUIET: &str = "#8A929D";
+/// Color of the chart bars other than the top one.
 const BAR: &str = "#2C343D";
 
 /// How many rows of each top list fit in the image.
@@ -40,9 +55,11 @@ const IMAGE_TOP: usize = 5;
 /// Between the figure and the artist in a song's second line.
 const INFO_SEP: &str = " · ";
 
+/// Month abbreviations for dates.
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+/// Month labels for the chart.
 const MONTH_INITIALS: [&str; 12] = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
 
 // ---------- text formatting ----------
@@ -66,14 +83,17 @@ pub fn fmt_count(n: u64, noun: &str) -> String {
     format!("{} {noun}{s}", fmt_int(n))
 }
 
+/// Milliseconds to whole minutes, rounded to the nearest.
 pub fn minutes(ms: u64) -> u64 {
     (ms + 30_000) / 60_000
 }
 
+/// "Jun 1, 2024"
 fn fmt_date(d: NaiveDate) -> String {
     format!("{} {}, {}", MONTHS[d.month0() as usize], d.day(), d.year())
 }
 
+/// "Jun 1"
 fn fmt_day_month(d: NaiveDate) -> String {
     format!("{} {}", MONTHS[d.month0() as usize], d.day())
 }
@@ -95,6 +115,7 @@ pub fn range_label(from: NaiveDate, to: NaiveDate) -> String {
     }
 }
 
+/// Escapes text for use inside the SVG.
 fn esc(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -105,12 +126,15 @@ fn esc(s: &str) -> String {
 
 // ---------- text measuring (to truncate with "…") ----------
 
+/// The embedded fonts, parsed to measure text without rendering it.
 struct Measure {
     regular: ttf_parser::Face<'static>,
     bold: ttf_parser::Face<'static>,
     number: ttf_parser::Face<'static>,
 }
 
+/// Width in px of `text` at `size` in a font. Characters the font lacks count as
+/// 0.6 em.
 fn face_width(face: &ttf_parser::Face, text: &str, size: f32) -> f32 {
     let upem = face.units_per_em() as f32;
     let units: f32 = text
@@ -125,6 +149,7 @@ fn face_width(face: &ttf_parser::Face, text: &str, size: f32) -> f32 {
 }
 
 impl Measure {
+    /// Parses the embedded fonts.
     fn new() -> Result<Self> {
         Ok(Self {
             regular: ttf_parser::Face::parse(FONT_REGULAR, 0).context("regular font")?,
@@ -133,6 +158,7 @@ impl Measure {
         })
     }
 
+    /// Width in px of `text` in Inter, regular or bold.
     fn width(&self, text: &str, size: f32, bold: bool) -> f32 {
         face_width(if bold { &self.bold } else { &self.regular }, text, size)
     }
@@ -158,12 +184,17 @@ impl Measure {
 
 // ---------- SVG ----------
 
+/// The SVG being assembled.
 struct Svg {
+    /// Elements drawn so far.
     body: String,
+    /// Accent color chosen by the user.
     accent: &'static str,
 }
 
 impl Svg {
+    /// Adds a line of Inter text with `y` as its baseline. `anchor` is the SVG
+    /// `text-anchor`: "start", "middle" or "end".
     #[allow(clippy::too_many_arguments)]
     fn text(
         &mut self,
@@ -182,6 +213,7 @@ impl Svg {
         ));
     }
 
+    /// Adds a rectangle with corners of radius `r`.
     fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32, fill: &str) {
         self.body.push_str(&format!(
             "<rect x='{x:.1}' y='{y:.1}' width='{w:.1}' height='{h:.1}' rx='{r}' fill='{fill}'/>\n"
@@ -209,7 +241,10 @@ fn tight_commas(number: &str, px: f32) -> String {
         .collect()
 }
 
-/// Builds the full SVG for the image.
+/// Builds the full SVG for the image. From top to bottom: the header, the main
+/// figure, the chart, the top lists and the footer, which is centered between the
+/// lists and the bottom of the image. The footer's last line shows the split by
+/// source and, if needed, the estimate note.
 pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> {
     let m = Measure::new()?;
     let mut svg = Svg {
@@ -240,16 +275,15 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> 
     let number = fmt_int(minutes(s.total_ms));
     let mut big_size: f32 = 240.0;
     let commas = number.matches(',').count() as f32;
-    // Tiny5 Mono's cells are 6 pixels wide; a comma's tightening saves 3 of them.
-    let pixel_w = |size: f32| face_width(&m.number, "0", size) / 6.0;
-    while face_width(&m.number, &number, big_size) - commas * 3.0 * pixel_w(big_size) > RIGHT - LEFT
+    let pixel_w = |size: f32| face_width(&m.number, "0", size) / NUMBER_CELL_PIXELS;
+    while face_width(&m.number, &number, big_size) - commas * COMMA_SAVED_PIXELS * pixel_w(big_size)
+        > RIGHT - LEFT
         && big_size > 80.0
     {
         big_size -= 8.0;
     }
     svg.body.push_str(&format!(
         "<text x='{:.1}' y='557' font-size='{big_size}' font-family='Tiny5 Mono' font-weight='400' fill='{}' text-anchor='middle'>{}</text>\n",
-        // Half a pixel to the right: each cell ends in a blank pixel column.
         CENTER + pixel_w(big_size) / 2.0,
         svg.accent,
         tight_commas(&number, pixel_w(big_size))
@@ -306,7 +340,6 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> 
     );
 
     // Extra facts and footer, below the top lists
-    // Centered between the end of the lists and the bottom of the image.
     const FOOT_CAP_H: f32 = 25.0;
     const FOOT_LINE_H: f32 = 44.0;
     let lists_end = artists_end.max(songs_end);
@@ -345,7 +378,6 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> 
             .map(|(src, _)| format!("{} only", src.label()))
             .unwrap_or_default()
     };
-    // One line: split by source and, if needed, the estimate note.
     let foot = if estimated {
         format!("{split} · estimated minutes")
     } else {
@@ -369,8 +401,10 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> 
     ))
 }
 
+/// Draws the chart at `y0`: minutes per month, or per year for more than 24 months.
+/// The bars fill the width up to a maximum, centered as a group, and the top one
+/// shows its value above it in the accent color.
 fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
-    // More than 24 months: group by year.
     let by_year = s.by_month.len() > 24;
     let mut bars: Vec<(String, u64)> = Vec::new();
     if by_year {
@@ -399,7 +433,6 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
     let max_i = bars.iter().position(|b| b.1 == max).unwrap_or(0);
     let top = y0 + 66.0;
     let base = y0 + 226.0;
-    // The bars fill the available width up to a maximum, centered as a group.
     const GAP: f32 = 16.0;
     const MAX_BAR_W: f32 = 180.0;
     let n = bars.len() as f32;
@@ -424,7 +457,6 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
             label,
         );
     }
-    // Value of the top month (or year), above its bar.
     let cx = start + slot * max_i as f32 + bw / 2.0;
     svg.text(
         cx,
@@ -462,7 +494,8 @@ fn song_info(
 }
 
 /// Draws a top list as a column and returns the y where it ends. Songs add a
-/// second line with their artist and the figure they rank by.
+/// second line with their artist and the figure they rank by. Ranks and single-line
+/// names sit halfway down a two-line song row.
 #[allow(clippy::too_many_arguments)]
 fn list(
     svg: &mut Svg,
@@ -490,7 +523,6 @@ fn list(
     let mut y = y0 + 64.0;
     let mut end = y;
     for (i, item) in items.iter().take(IMAGE_TOP).enumerate() {
-        // Ranks and single-line names sit halfway down a two-line song row.
         let row_mid = y + (INFO_DY - NAME * CAP_H) / 2.0;
         let centered = |size: f32| row_mid + size * CAP_H / 2.0;
         svg.text(

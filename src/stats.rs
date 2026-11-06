@@ -11,56 +11,86 @@ use crate::normalize::{artist_key, clean_title, track_key};
 /// Plays shorter than this count as skips (same as Spotify).
 pub const MIN_MS: u64 = 30_000;
 
+/// What orders the top lists; the other measure breaks ties.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RankBy {
     Minutes,
     Plays,
 }
 
+/// Which plays count towards the stats.
 pub struct Filters {
+    /// First day included, in the time zone `tz`. `None` = no lower limit.
     pub from: Option<NaiveDate>,
+    /// Last day included, in the time zone `tz`. `None` = no upper limit.
     pub to: Option<NaiveDate>,
     /// `None` = all sources.
     pub source: Option<Source>,
+    /// Time zone that decides the day, month and hour of each play.
     pub tz: Tz,
 }
 
+/// An entry of a top list: an artist or a song.
 #[derive(Debug, Clone)]
 pub struct Ranked {
+    /// Display name: the most frequent spelling among its plays.
     pub name: String,
     /// Artist, for songs.
     pub detail: Option<String>,
+    /// Total listening time in milliseconds.
     pub ms: u64,
+    /// Number of plays.
     pub plays: u64,
 }
 
+/// The recap of the filtered plays.
 #[derive(Debug)]
 pub struct Stats {
+    /// First day of the range: the filter if given, else the first play.
     pub from: NaiveDate,
+    /// Last day of the range: the filter if given, else the last play.
     pub to: NaiveDate,
+    /// Total listening time in milliseconds.
     pub total_ms: u64,
+    /// The part of the total that is an estimate.
     pub estimated_ms: u64,
+    /// Number of plays counted.
     pub plays: u64,
     /// Minutes per month, in order, with empty months set to 0.
     pub by_month: Vec<((i32, u32), u64)>,
+    /// Top artists, best first.
     pub top_artists: Vec<Ranked>,
+    /// Top songs, best first, with the artist in [`Ranked::detail`], spelled as in
+    /// the top artists.
     pub top_tracks: Vec<Ranked>,
+    /// How many different artists were played.
     pub distinct_artists: usize,
+    /// How many different songs were played.
     pub distinct_tracks: usize,
+    /// Day with the most listening time, and that time in milliseconds.
     pub top_day: Option<(NaiveDate, u64)>,
+    /// Hour of the day (0-23) with the most listening time, and that time in
+    /// milliseconds.
     pub top_hour: Option<(u32, u64)>,
+    /// Listening time in milliseconds per service.
     pub by_source: Vec<(Source, u64)>,
 }
 
+/// Running totals for one artist or song while the plays are aggregated.
 #[derive(Default)]
 struct Acc {
+    /// Listening time in milliseconds.
     ms: u64,
+    /// Number of plays.
     plays: u64,
+    /// How often each spelling of the name appeared.
     names: HashMap<String, u64>,
+    /// How often each spelling of the detail (the artist, for songs) appeared.
     details: HashMap<String, u64>,
 }
 
 impl Acc {
+    /// Adds one play to the totals.
     fn add(&mut self, ms: u64, name: &str, detail: Option<&str>) {
         self.ms += ms;
         self.plays += 1;
@@ -80,6 +110,8 @@ fn most_common(names: &HashMap<String, u64>) -> String {
         .unwrap_or_default()
 }
 
+/// Turns the totals into a top list: sorted by `by`, with the other measure and
+/// then the name breaking ties, and cut to `top` entries.
 fn rank(map: HashMap<String, Acc>, top: usize, by: RankBy) -> Vec<Ranked> {
     let mut items: Vec<Ranked> = map
         .into_values()
@@ -105,15 +137,20 @@ fn rank(map: HashMap<String, Acc>, top: usize, by: RankBy) -> Vec<Ranked> {
     items
 }
 
+/// The (year, month) a day belongs to.
 fn first_of_month(d: NaiveDate) -> (i32, u32) {
     (d.year(), d.month())
 }
 
+/// The (year, month) after the given one.
 fn next_month((y, m): (i32, u32)) -> (i32, u32) {
     if m == 12 { (y + 1, 1) } else { (y, m + 1) }
 }
 
 /// Computes the stats. Returns `None` if no plays are left after filtering.
+///
+/// Plays with a real length under [`MIN_MS`] are skips and don't count; estimated
+/// plays always do.
 pub fn compute(plays: &[Play], f: &Filters, top: usize, by: RankBy) -> Option<Stats> {
     let mut total_ms = 0;
     let mut estimated_ms = 0;
@@ -136,7 +173,6 @@ pub fn compute(plays: &[Play], f: &Filters, top: usize, by: RankBy) -> Option<St
         if f.from.is_some_and(|d| day < d) || f.to.is_some_and(|d| day > d) {
             continue;
         }
-        // With a real length, anything under 30 s is a skip.
         if !p.estimated && p.ms_played < MIN_MS {
             continue;
         }
@@ -171,7 +207,6 @@ pub fn compute(plays: &[Play], f: &Filters, top: usize, by: RankBy) -> Option<St
     let from = f.from.unwrap_or(first?);
     let to = f.to.unwrap_or(last?);
 
-    // Fill months without plays inside the range with 0.
     let mut by_month = Vec::new();
     let end = first_of_month(to);
     let mut cur = first_of_month(from);
@@ -200,7 +235,6 @@ pub fn compute(plays: &[Play], f: &Filters, top: usize, by: RankBy) -> Option<St
         distinct_artists: artists.len(),
         distinct_tracks: tracks.len(),
         top_tracks: {
-            // Show each song's artist with the same name used in the top artists.
             let names: HashMap<String, String> = artists
                 .iter()
                 .map(|(k, a)| (k.clone(), most_common(&a.names)))

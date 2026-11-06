@@ -1,3 +1,9 @@
+//! Music Wrapped (`mw`): a listening recap from Spotify and YouTube Music data
+//! exports.
+//!
+//! This is the command line entry point: it parses the arguments, loads the
+//! selected sources, computes the stats, prints them and saves the image.
+
 mod durations;
 mod model;
 mod normalize;
@@ -85,6 +91,7 @@ struct Cli {
     no_image: bool,
 }
 
+/// Values of `--source`: which services count towards the stats.
 #[derive(Clone, Copy, ValueEnum)]
 enum SourceArg {
     All,
@@ -92,6 +99,7 @@ enum SourceArg {
     Ytm,
 }
 
+/// Values of `--color`: the accent used for the minutes and each song's figure.
 #[derive(Clone, Copy, ValueEnum)]
 enum ColorArg {
     Orange,
@@ -104,6 +112,7 @@ enum ColorArg {
 }
 
 impl ColorArg {
+    /// The color as an SVG hex string.
     fn hex(self) -> &'static str {
         match self {
             ColorArg::Orange => "#FF6B4A",
@@ -117,12 +126,17 @@ impl ColorArg {
     }
 }
 
+/// Values of `--rank-by`: what orders the top lists and which figure the image shows.
 #[derive(Clone, Copy, ValueEnum)]
 enum RankArg {
     Minutes,
     Plays,
 }
 
+/// Runs the program: loads the plays, prints the stats and saves the image unless
+/// `--no-image` was given.
+///
+/// Fails on invalid paths or dates, or when no plays are left after filtering.
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -261,6 +275,7 @@ fn wants(filter: Option<Source>, s: Source) -> bool {
     filter.is_none_or(|f| f == s)
 }
 
+/// Prints to stderr how many plays a source loaded and its warnings.
 fn report(name: &str, n: usize, warnings: &[String]) {
     eprintln!("{name}: {} loaded", fmt_count(n as u64, "play"));
     for w in warnings {
@@ -268,6 +283,8 @@ fn report(name: &str, n: usize, warnings: &[String]) {
     }
 }
 
+/// Default image name: `wrapped_all.png` without date filters, `wrapped_<year>.png`
+/// for a whole year, and `wrapped_<from>_<to>.png` for any other range.
 fn default_out(s: &Stats, filtered: bool) -> PathBuf {
     let label = if !filtered {
         "all".to_string()
@@ -279,6 +296,8 @@ fn default_out(s: &Stats, filtered: bool) -> PathBuf {
     PathBuf::from(format!("wrapped_{label}.png"))
 }
 
+/// Prints the full recap to stdout, including what the image leaves out (every
+/// month, longer top lists and the favorite hour).
 fn print_stats(s: &Stats) {
     let approx = if s.estimated_ms > 0 { "≈ " } else { "" };
     println!("\n== {} ==", range_label(s.from, s.to));

@@ -14,6 +14,7 @@ use super::Loaded;
 use crate::model::{Play, Source};
 use crate::normalize::{clean_artist, strip_artist_prefix};
 
+/// One item in the history; only the fields used here.
 #[derive(Deserialize)]
 struct Entry {
     header: Option<String>,
@@ -24,6 +25,7 @@ struct Entry {
     time: Option<String>,
 }
 
+/// A subtitle of an [`Entry`]; the first one holds the channel.
 #[derive(Deserialize)]
 struct Subtitle {
     name: Option<String>,
@@ -44,6 +46,9 @@ const PREFIXES: &[&str] = &[
 /// Equivalent suffixes for languages that put the verb last.
 const SUFFIXES: &[&str] = &[" angesehen", " bekeken"];
 
+/// Loads the plays from `watch-history.json`, counting each as `avg_minutes`.
+///
+/// Fails if the file doesn't exist, is the HTML export or isn't valid JSON.
 pub fn load(path: &Path, avg_minutes: f64) -> Result<Loaded> {
     if !path.is_file() {
         bail!("YouTube Music file does not exist: {}", path.display());
@@ -70,6 +75,9 @@ pub fn load(path: &Path, avg_minutes: f64) -> Result<Loaded> {
     Ok(loaded)
 }
 
+/// Parses the history, keeping YouTube Music entries with a known song and artist.
+/// An entry without a subtitle is a deleted video or has no channel, so its artist
+/// is unknown and it's dropped.
 fn parse(text: &str, avg_minutes: f64) -> Result<Vec<Play>> {
     let entries: Vec<Entry> = serde_json::from_str(text).context("invalid JSON")?;
     let ms = (avg_minutes.max(0.0) * 60_000.0).round() as u64;
@@ -78,7 +86,6 @@ fn parse(text: &str, avg_minutes: f64) -> Result<Vec<Play>> {
         .filter(is_music)
         .filter_map(|e| {
             let track = strip_title(e.title.as_deref()?)?;
-            // No subtitle = deleted video or no channel: the artist is unknown.
             let artist = clean_artist(e.subtitles?.into_iter().next()?.name.as_deref()?);
             if track.is_empty() || artist.is_empty() {
                 return None;
@@ -103,7 +110,7 @@ fn parse(text: &str, avg_minutes: f64) -> Result<Vec<Play>> {
     Ok(plays)
 }
 
-/// Extracts the video ID from "https://music.youtube.com/watch?v=XXXXXXXXXXX&...".
+/// Extracts the video ID from `https://music.youtube.com/watch?v=XXXXXXXXXXX&...`.
 fn video_id(url: &str) -> Option<String> {
     let (_, query) = url.split_once('?')?;
     let id = query.split('&').find_map(|kv| kv.strip_prefix("v="))?;
@@ -114,6 +121,7 @@ fn video_id(url: &str) -> Option<String> {
     valid.then(|| id.to_string())
 }
 
+/// Is this entry from YouTube Music, rather than plain YouTube?
 fn is_music(e: &Entry) -> bool {
     e.header.as_deref() == Some("YouTube Music")
         || e.title_url
@@ -121,6 +129,8 @@ fn is_music(e: &Entry) -> bool {
             .is_some_and(|u| u.contains("music.youtube.com"))
 }
 
+/// Removes the "Watched"-like wording Takeout adds around the title. In a language
+/// it doesn't know, the title is returned as is.
 fn strip_title(title: &str) -> Option<String> {
     let t = title.trim();
     for p in PREFIXES {
@@ -133,7 +143,6 @@ fn strip_title(title: &str) -> Option<String> {
             return Some(rest.trim().to_string());
         }
     }
-    // Unknown language: use the title as is.
     Some(t.to_string())
 }
 

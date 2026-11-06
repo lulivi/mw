@@ -3,10 +3,12 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+/// The compiled `mw` binary, ready to receive arguments.
 fn bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_mw"))
 }
 
+/// Folder with the sample data.
 fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }

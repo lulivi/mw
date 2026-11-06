@@ -16,34 +16,47 @@ use serde::Deserialize;
 
 use crate::model::{Play, Source};
 
+/// Endpoint of the YouTube Data API `videos.list` method.
 const API_URL: &str = "https://www.googleapis.com/youtube/v3/videos";
+/// Most videos the API accepts in one request.
 const BATCH: usize = 50;
 
 /// Video ID -> seconds. `None` = the video no longer exists or has no length.
 type Cache = BTreeMap<String, Option<u64>>;
 
+/// How to fetch and apply real lengths.
 pub struct Options {
+    /// YouTube Data API v3 key.
     pub api_key: String,
+    /// JSON file where the lengths are cached.
     pub cache_path: PathBuf,
     /// Cap per play, so a livestream or a 2-hour mix doesn't inflate the minutes.
     pub max_minutes: f64,
 }
 
+/// Outcome of [`resolve`], for the user.
 #[derive(Default)]
 pub struct Report {
+    /// Distinct YouTube Music videos in the plays.
     pub distinct: usize,
+    /// How many of them now have a real length.
     pub resolved: usize,
+    /// Lengths obtained from the API in this run.
     pub fetched: usize,
+    /// Successful API requests made in this run.
     pub requests: usize,
+    /// Problems that didn't stop the program.
     pub warnings: Vec<String>,
 }
 
+/// Body of a `videos.list` response; only the fields used here.
 #[derive(Deserialize)]
 struct Response {
     #[serde(default)]
     items: Vec<Item>,
 }
 
+/// One video in a [`Response`].
 #[derive(Deserialize)]
 struct Item {
     id: String,
@@ -51,8 +64,10 @@ struct Item {
     content_details: Option<ContentDetails>,
 }
 
+/// The `contentDetails` part of an [`Item`].
 #[derive(Deserialize)]
 struct ContentDetails {
+    /// Length in ISO 8601, such as "PT3M45S".
     duration: Option<String>,
 }
 
@@ -143,6 +158,11 @@ fn apply(plays: &mut [Play], cache: &Cache, max_ms: u64) -> usize {
     resolved.len()
 }
 
+/// Asks the API for the lengths of up to [`BATCH`] videos. Returns video ID ->
+/// seconds; videos it doesn't know about are simply missing from the result.
+///
+/// Fails on connection problems and non-success responses, such as an invalid key
+/// or an exhausted quota.
 fn fetch(key: &str, ids: &[String]) -> Result<HashMap<String, u64>> {
     let mut resp = ureq::get(API_URL)
         .query("part", "contentDetails")
@@ -172,6 +192,8 @@ fn fetch(key: &str, ids: &[String]) -> Result<HashMap<String, u64>> {
     parse_response(&text)
 }
 
+/// Extracts video ID -> seconds from a response body, skipping videos without a
+/// readable length.
 fn parse_response(text: &str) -> Result<HashMap<String, u64>> {
     let resp: Response = serde_json::from_str(text).context("unexpected response")?;
     Ok(resp
@@ -184,7 +206,8 @@ fn parse_response(text: &str) -> Result<HashMap<String, u64>> {
         .collect())
 }
 
-/// "PT3M45S" -> 225. Supports days, hours, minutes and seconds.
+/// "PT3M45S" -> 225. Supports weeks, days, hours, minutes and seconds; years and
+/// months are rejected because they don't apply to videos.
 fn parse_iso8601(s: &str) -> Option<u64> {
     let rest = s.strip_prefix('P')?;
     let mut total = 0u64;
@@ -203,7 +226,7 @@ fn parse_iso8601(s: &str) -> Option<u64> {
                     ('H', true) => 3_600,
                     ('M', true) => 60,
                     ('S', true) => 1,
-                    _ => return None, // years/months don't apply to videos
+                    _ => return None,
                 };
             }
             _ => return None,
@@ -212,6 +235,7 @@ fn parse_iso8601(s: &str) -> Option<u64> {
     num.is_empty().then_some(total)
 }
 
+/// Reads the cache. A missing file is an empty cache, not an error.
 fn load_cache(path: &Path) -> Result<Cache> {
     if !path.exists() {
         return Ok(Cache::new());
@@ -221,6 +245,7 @@ fn load_cache(path: &Path) -> Result<Cache> {
     serde_json::from_str(&text).with_context(|| format!("{} is not a valid cache", path.display()))
 }
 
+/// Writes the cache as readable JSON.
 fn save_cache(path: &Path, cache: &Cache) -> Result<()> {
     let text = serde_json::to_string_pretty(cache)?;
     fs::write(path, text).with_context(|| format!("cannot write {}", path.display()))

@@ -4,7 +4,7 @@ use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 
 /// Words that, inside parentheses or brackets, mark an add-on that is not part
-/// of the real title ("(Official Video)", "[Audio]", "(Letra)"). Spanish variants
+/// of the real title (`(Official Video)`, `[Audio]`, `(Letra)`). Spanish variants
 /// are included because titles come in the uploader's language.
 const NOISE_WORDS: &[&str] = &[
     "official",
@@ -87,6 +87,7 @@ pub fn clean_title(raw: &str) -> String {
     }
 }
 
+/// Does this text from inside parentheses or brackets contain a noise word?
 fn is_noise(inner: &str) -> bool {
     let lower = inner.to_lowercase();
     lower
@@ -94,6 +95,7 @@ fn is_noise(inner: &str) -> bool {
         .any(|w| NOISE_WORDS.contains(&w))
 }
 
+/// Trims the text and turns every run of whitespace into a single space.
 fn collapse_spaces(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -113,6 +115,8 @@ pub fn artist_key(artist: &str) -> String {
         .collect()
 }
 
+/// Song key: the artist key plus the cleaned title, so the same song merges across
+/// sources but songs with the same title by different artists don't.
 pub fn track_key(artist: &str, track: &str) -> String {
     format!("{}\u{1f}{}", artist_key(artist), key(&clean_title(track)))
 }

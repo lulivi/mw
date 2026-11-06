@@ -15,6 +15,7 @@ use super::Loaded;
 use crate::model::{Play, Source};
 use crate::normalize::clean_artist;
 
+/// One play in the extended history; only the fields used here.
 #[derive(Deserialize)]
 struct ExtendedEntry {
     ts: String,
@@ -25,9 +26,11 @@ struct ExtendedEntry {
     master_metadata_album_album_name: Option<String>,
 }
 
+/// One play in the basic history.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BasicEntry {
+    /// When the play ended, as "2024-03-01 21:15" in UTC.
     end_time: String,
     artist_name: Option<String>,
     track_name: Option<String>,
@@ -35,6 +38,11 @@ struct BasicEntry {
     ms_played: u64,
 }
 
+/// Loads the plays from a folder or a single file, preferring the extended history
+/// over the basic one.
+///
+/// Fails if the path doesn't exist or holds no Spotify files. A file that can't be
+/// read or parsed is skipped with a warning.
 pub fn load(path: &Path) -> Result<Loaded> {
     if !path.exists() {
         bail!("Spotify path does not exist: {}", path.display());
@@ -90,6 +98,7 @@ fn find(path: &Path, patterns: &[&str]) -> Result<Vec<PathBuf>> {
     Ok(vec![])
 }
 
+/// Parses every file with `parse`, turning failures into warnings.
 fn read_all(files: &[PathBuf], parse: fn(&str) -> Result<Vec<Play>>) -> Result<Loaded> {
     let mut loaded = Loaded::default();
     for file in files {
@@ -106,12 +115,13 @@ fn read_all(files: &[PathBuf], parse: fn(&str) -> Result<Vec<Play>>) -> Result<L
     Ok(loaded)
 }
 
+/// Parses an extended history file. Entries without a track name are podcasts,
+/// audiobooks or empty, and are ignored.
 fn parse_extended(text: &str) -> Result<Vec<Play>> {
     let entries: Vec<ExtendedEntry> = serde_json::from_str(text).context("invalid JSON")?;
     let plays = entries
         .into_iter()
         .filter_map(|e| {
-            // No track name = podcast, audiobook or empty entry.
             let track = e.master_metadata_track_name?.trim().to_string();
             let artist = clean_artist(&e.master_metadata_album_artist_name?);
             if track.is_empty() || artist.is_empty() {
@@ -135,6 +145,7 @@ fn parse_extended(text: &str) -> Result<Vec<Play>> {
     Ok(plays)
 }
 
+/// Parses a basic history file, ignoring entries without a known artist.
 fn parse_basic(text: &str) -> Result<Vec<Play>> {
     let entries: Vec<BasicEntry> = serde_json::from_str(text).context("invalid JSON")?;
     let plays = entries
@@ -145,7 +156,6 @@ fn parse_basic(text: &str) -> Result<Vec<Play>> {
             if track.is_empty() || artist.is_empty() || artist == "Unknown Artist" {
                 return None;
             }
-            // "2024-03-01 21:15", in UTC.
             let ts = NaiveDateTime::parse_from_str(&e.end_time, "%Y-%m-%d %H:%M")
                 .ok()?
                 .and_utc();
