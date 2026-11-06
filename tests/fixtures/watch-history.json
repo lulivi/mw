@@ -1,0 +1,6 @@
+[
+  {"header":"YouTube Music","title":"Has visto DESPECHÁ (Official Video)","titleUrl":"https://music.youtube.com/watch?v=aaaaaaaaaaa","subtitles":[{"name":"ROSALÍA - Topic","url":"https://www.youtube.com/channel/x"}],"time":"2025-02-10T20:00:00.123Z","products":["YouTube"]},
+  {"header":"YouTube Music","title":"Watched Instant Crush","titleUrl":"https://music.youtube.com/watch?v=bbbbbbbbbbb","subtitles":[{"name":"Daft Punk - Topic","url":"https://www.youtube.com/channel/y"}],"time":"2025-05-01T08:30:00Z","products":["YouTube"]},
+  {"header":"YouTube","title":"Has visto Un vídeo de gatos","titleUrl":"https://www.youtube.com/watch?v=ccc","subtitles":[{"name":"Gatos"}],"time":"2025-05-01T09:00:00Z","products":["YouTube"]},
+  {"header":"YouTube Music","title":"Has visto un vídeo que se ha eliminado","time":"2025-05-02T09:00:00Z","products":["YouTube"]}
+]

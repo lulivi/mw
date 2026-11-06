@@ -1,0 +1,9 @@
+[
+  {"ts":"2024-12-31T23:30:00Z","platform":"android","ms_played":200000,"master_metadata_track_name":"Despechá","master_metadata_album_artist_name":"Rosalía","master_metadata_album_album_name":"Motomami +","spotify_track_uri":"spotify:track:1","skipped":false},
+  {"ts":"2025-01-15T18:00:00Z","platform":"android","ms_played":180000,"master_metadata_track_name":"Tití Me Preguntó","master_metadata_album_artist_name":"Bad Bunny","master_metadata_album_album_name":"Un Verano Sin Ti","spotify_track_uri":"spotify:track:2","skipped":false},
+  {"ts":"2025-01-15T18:04:00Z","platform":"android","ms_played":12000,"master_metadata_track_name":"Moscow Mule","master_metadata_album_artist_name":"Bad Bunny","master_metadata_album_album_name":"Un Verano Sin Ti","spotify_track_uri":"spotify:track:3","skipped":true},
+  {"ts":"2025-03-02T09:10:00Z","platform":"ios","ms_played":1500000,"master_metadata_track_name":null,"master_metadata_album_artist_name":null,"master_metadata_album_album_name":null,"episode_name":"Un podcast","spotify_episode_uri":"spotify:episode:1"},
+  {"ts":"2025-07-20T22:00:00Z","platform":"ios","ms_played":240000,"master_metadata_track_name":"Do I Wanna Know?","master_metadata_album_artist_name":"Arctic Monkeys","master_metadata_album_album_name":"AM","spotify_track_uri":"spotify:track:4","skipped":false},
+  {"ts":"2025-07-20T22:05:00Z","platform":"ios","ms_played":230000,"master_metadata_track_name":"Despechá","master_metadata_album_artist_name":"Rosalía","master_metadata_album_album_name":"Motomami +","spotify_track_uri":"spotify:track:1","skipped":false},
+  {"ts":"2024-06-10T12:00:00Z","platform":"ios","ms_played":210000,"master_metadata_track_name":"Malamente","master_metadata_album_artist_name":"Rosalía","master_metadata_album_album_name":"El Mal Querer","spotify_track_uri":"spotify:track:5","skipped":false}
+]
