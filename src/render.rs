@@ -28,7 +28,7 @@ const RIGHT: f32 = W - 60.0;
 const CENTER: f32 = W / 2.0;
 
 const BG: &str = "#101418";
-const INK: &str = "#8A929D";
+const INK: &str = "#AEB5BD";
 const QUIET: &str = "#8A929D";
 const BAR: &str = "#2C343D";
 
@@ -505,8 +505,9 @@ fn list(
         end = name_y;
         if let Some(detail) = &item.detail {
             let (artist, number, unit) = song_info(m, detail, item, by, INFO, max_w);
+            let accent = svg.accent;
             svg.body.push_str(&format!(
-                "<text x='{x:.1}' y='{:.1}' font-size='{INFO}' fill='{QUIET}'><tspan font-weight='700'>{}</tspan>{unit}{INFO_SEP}{}</text>\n",
+                "<text x='{x:.1}' y='{:.1}' font-size='{INFO}' fill='{QUIET}'><tspan font-weight='700' fill='{accent}'>{}</tspan>{unit}{INFO_SEP}{}</text>\n",
                 y + INFO_DY,
                 esc(&number),
                 esc(&artist)

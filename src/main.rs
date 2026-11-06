@@ -112,7 +112,7 @@ impl ColorArg {
             ColorArg::Green => "#3DDC97",
             ColorArg::Pink => "#FF6FB5",
             ColorArg::Red => "#FF5A5F",
-            ColorArg::Gray => "#C9CED4",
+            ColorArg::Gray => "#E3E7EB",
         }
     }
 }
