@@ -28,15 +28,14 @@ const RIGHT: f32 = W - 60.0;
 const CENTER: f32 = W / 2.0;
 
 const BG: &str = "#101418";
-const INK: &str = "#F4F5F7";
-const QUIET: &str = "#B8C0C8";
-const ACCENT: &str = "#FF6B4A";
+const INK: &str = "#8A929D";
+const QUIET: &str = "#8A929D";
 const BAR: &str = "#2C343D";
 
 /// How many rows of each top list fit in the image.
 const IMAGE_TOP: usize = 5;
 
-/// Between the artist and the figure in a song's second line.
+/// Between the figure and the artist in a song's second line.
 const INFO_SEP: &str = " · ";
 
 const MONTHS: [&str; 12] = [
@@ -159,6 +158,7 @@ impl Measure {
 
 struct Svg {
     body: String,
+    accent: &'static str,
 }
 
 impl Svg {
@@ -208,15 +208,16 @@ fn tight_commas(number: &str, px: f32) -> String {
 }
 
 /// Builds the full SVG for the image.
-pub fn build_svg(s: &Stats, by: RankBy) -> Result<String> {
+pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> {
     let m = Measure::new()?;
     let mut svg = Svg {
         body: String::new(),
+        accent,
     };
     let estimated = s.estimated_ms > 0;
 
     // Header
-    svg.text(CENTER, 285.0, 38.0, true, ACCENT, "middle", "YOUR MUSIC");
+    svg.text(CENTER, 279.0, 38.0, true, INK, "middle", "YOUR MUSIC");
     let range = range_label(s.from, s.to);
     let range_size = if range.chars().count() > 8 {
         56.0
@@ -245,9 +246,10 @@ pub fn build_svg(s: &Stats, by: RankBy) -> Result<String> {
         big_size -= 8.0;
     }
     svg.body.push_str(&format!(
-        "<text x='{:.1}' y='557' font-size='{big_size}' font-family='Tiny5 Mono' font-weight='400' fill='{INK}' text-anchor='middle'>{}</text>\n",
+        "<text x='{:.1}' y='557' font-size='{big_size}' font-family='Tiny5 Mono' font-weight='400' fill='{}' text-anchor='middle'>{}</text>\n",
         // Half a pixel to the right: each cell ends in a blank pixel column.
         CENTER + pixel_w(big_size) / 2.0,
+        svg.accent,
         tight_commas(&number, pixel_w(big_size))
     ));
     svg.text(
@@ -403,9 +405,9 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
     for (i, (label, ms)) in bars.iter().enumerate() {
         let cx = LEFT + slot * (i as f32 + 0.5);
         let h = ((*ms as f32 / max as f32) * (base - top)).max(if *ms > 0 { 6.0 } else { 2.0 });
-        let fill = if i == max_i { ACCENT } else { BAR };
+        let fill = if i == max_i { svg.accent } else { BAR };
         svg.rect(cx - bw / 2.0, base - h, bw, h, (bw / 6.0).min(8.0), fill);
-        let label_fill = if i == max_i { INK } else { QUIET };
+        let label_fill = if i == max_i { svg.accent } else { QUIET };
         svg.text(
             cx,
             base + 44.0,
@@ -423,15 +425,15 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
         top - 14.0,
         36.0,
         true,
-        ACCENT,
+        svg.accent,
         "middle",
         &fmt_int(minutes(max)),
     );
 }
 
-/// The artist, number and unit for a song's second line: "Artist · **7** plays"
-/// or "Artist · **21** min", depending on what the list ranks by. The artist is
-/// cut if it doesn't fit next to the figure.
+/// The number, unit and artist for a song's second line: "**7** plays · Artist"
+/// or "**21** min · Artist", depending on what the list ranks by. The artist is
+/// cut on the right if it doesn't fit after the figure.
 fn song_info(
     m: &Measure,
     artist: &str,
@@ -476,7 +478,7 @@ fn list(
     /// Inter's cap height, as a fraction of the font size.
     const CAP_H: f32 = 0.727;
 
-    svg.text(x0, y0, 44.0, true, ACCENT, "start", title);
+    svg.text(x0, y0, 44.0, true, INK, "start", title);
     let x = x0 + RANK_W;
     let max_w = w - RANK_W;
     let mut y = y0 + 64.0;
@@ -490,7 +492,7 @@ fn list(
             centered(RANK),
             RANK,
             true,
-            ACCENT,
+            INK,
             "start",
             &(i + 1).to_string(),
         );
@@ -504,10 +506,10 @@ fn list(
         if let Some(detail) = &item.detail {
             let (artist, number, unit) = song_info(m, detail, item, by, INFO, max_w);
             svg.body.push_str(&format!(
-                "<text x='{x:.1}' y='{:.1}' font-size='{INFO}' fill='{QUIET}'>{}{INFO_SEP}<tspan font-weight='700'>{}</tspan>{unit}</text>\n",
+                "<text x='{x:.1}' y='{:.1}' font-size='{INFO}' fill='{QUIET}'><tspan font-weight='700'>{}</tspan>{unit}{INFO_SEP}{}</text>\n",
                 y + INFO_DY,
-                esc(&artist),
-                esc(&number)
+                esc(&number),
+                esc(&artist)
             ));
             end = y + INFO_DY;
         }

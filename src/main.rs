@@ -52,6 +52,10 @@ struct Cli {
     #[arg(long, value_enum, default_value_t = RankArg::Plays)]
     rank_by: RankArg,
 
+    /// Accent color of the image
+    #[arg(long, value_enum, default_value_t = ColorArg::Orange)]
+    color: ColorArg,
+
     /// Time zone used to group by day and month
     #[arg(long, default_value = "Europe/Madrid")]
     tz: Tz,
@@ -86,6 +90,31 @@ enum SourceArg {
     All,
     Spotify,
     Ytm,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ColorArg {
+    Orange,
+    Purple,
+    Blue,
+    Green,
+    Pink,
+    Red,
+    Gray,
+}
+
+impl ColorArg {
+    fn hex(self) -> &'static str {
+        match self {
+            ColorArg::Orange => "#FF6B4A",
+            ColorArg::Purple => "#B388FF",
+            ColorArg::Blue => "#5AA9FF",
+            ColorArg::Green => "#3DDC97",
+            ColorArg::Pink => "#FF6FB5",
+            ColorArg::Red => "#FF5A5F",
+            ColorArg::Gray => "#C9CED4",
+        }
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -164,7 +193,7 @@ fn main() -> Result<()> {
         let out = cli
             .out
             .unwrap_or_else(|| default_out(&stats, from.is_some() || to.is_some()));
-        let svg = render::build_svg(&stats, rank_by)?;
+        let svg = render::build_svg(&stats, rank_by, cli.color.hex())?;
         render::save_png(&svg, &out)?;
         println!("\nImage saved to {}", out.display());
     }

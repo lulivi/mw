@@ -73,6 +73,28 @@ fn terminal_only_and_spotify_only() {
 }
 
 #[test]
+fn color_changes_the_image() {
+    let dir = tempfile::tempdir().unwrap();
+    let render = |name: &str, args: &[&str]| {
+        let out = dir.path().join(name);
+        let o = bin()
+            .env_remove("YT_API_KEY")
+            .arg("--spotify")
+            .arg(fixtures().join("spotify"))
+            .args(args)
+            .arg("--out")
+            .arg(&out)
+            .output()
+            .unwrap();
+        assert!(o.status.success());
+        std::fs::read(&out).unwrap()
+    };
+    let default = render("default.png", &[]);
+    assert_eq!(default, render("orange.png", &["--color", "orange"]));
+    assert_ne!(default, render("purple.png", &["--color", "purple"]));
+}
+
+#[test]
 fn clear_errors() {
     // No sources
     let o = bin().arg("--no-image").output().unwrap();

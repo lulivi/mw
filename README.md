@@ -66,6 +66,7 @@ To have `mw` available from any folder, install it with `cargo install --path .`
 | `--from` / `--to <YYYY-MM-DD>` | Date range, both days included | whole history |
 | `--top <N>` | Size of the top lists in the terminal (the image shows 5) | 5 |
 | `--rank-by minutes\|plays` | Rank top lists by minutes or by plays; the image shows that figure for each song | `plays` |
+| `--color orange\|purple\|blue\|green\|pink\|red\|gray` | Accent color of the image | `orange` |
 | `--tz <zone>` | Time zone used to group by day and month | `Europe/Madrid` |
 | `--ytm-avg-minutes <F>` | Minutes counted per YouTube Music play | 3.5 |
 | `--yt-api-key <KEY>` | YouTube Data API v3 key to use each song's real length (also `YT_API_KEY`) | — |
