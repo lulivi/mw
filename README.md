@@ -55,6 +55,10 @@ On Windows the binary is `target\release\mw.exe`. You can also use `cargo run --
 
 To have `mw` available from any folder, install it with `cargo install --path .` and run it directly: `mw --ytm watch-history.json --year 2025`.
 
+### Cross-compiling
+
+With Docker installed, `./scripts/dist.sh` builds macOS (Apple Silicon), Windows (x64) and Linux (x64, static) binaries into `dist/`. No Rust targets or other toolchains are needed on your machine.
+
 ## Options
 
 | Option | What it does | Default |
