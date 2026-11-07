@@ -6,7 +6,7 @@ Everything runs locally: your data never leaves your computer.
 
 ## Requirements
 
-- Rust 1.85 or later (`rustup update` if you already have it; otherwise see https://rustup.rs).
+- A recent stable Rust (`rustup update` if you already have it; otherwise see https://rustup.rs).
 
 ## 1. Get your data
 
