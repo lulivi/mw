@@ -1,0 +1,3 @@
+[workspace]
+# No crates.io: take the last version from git tags, and tag/release publish = false packages.
+git_only = true
