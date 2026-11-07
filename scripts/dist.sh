@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Cross-compiles mw for every release target inside Docker and copies the binaries to dist/.
+# Cross-compiles mw for every release target inside Docker, then writes dist/<target>/mw[.exe]
+# and dist/mw-<target>.zip (binary + licenses, no version in the name).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -10,9 +11,11 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e CARGO_HOME=/io/target/car
   -v "$PWD":/io -w /io "$IMAGE" \
   cargo zigbuild --release --locked "${TARGETS[@]/#/--target=}"
 
-mkdir -p dist
+rm -rf dist
 for t in "${TARGETS[@]}"; do
   ext=; [[ $t == *windows* ]] && ext=.exe
-  cp "target/$t/release/mw$ext" "dist/mw-$t$ext"
+  mkdir -p "dist/$t"
+  cp "target/$t/release/mw$ext" "dist/$t/"
+  zip -j "dist/mw-$t.zip" "dist/$t/mw$ext" LICENSE assets/OFL-*.txt
 done
 ls -l dist
