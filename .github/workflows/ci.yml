@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Lets release-pr run the checks on its PR: events from GITHUB_TOKEN don't trigger workflows.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,6 +30,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      actions: write
     concurrency:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
@@ -36,11 +39,17 @@ jobs:
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - uses: release-plz/action@v0.5
+      - id: release-plz
+        uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - if: steps.release-plz.outputs.prs_created == 'true'
+        run: gh workflow run ci.yml --ref "$BRANCH"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ fromJSON(steps.release-plz.outputs.pr).head_branch }}
 
   release:
     if: github.event_name == 'push'
