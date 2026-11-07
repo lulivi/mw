@@ -4,7 +4,17 @@ Your own "Wrapped" from your Spotify and YouTube Music data: total minutes, minu
 
 Everything runs locally: your data never leaves your computer.
 
-## Requirements
+## Download
+
+Prebuilt binaries of the latest release (no Rust needed):
+
+- macOS (Apple Silicon): [mw-aarch64-apple-darwin.zip](https://github.com/lulivi/mw/releases/latest/download/mw-aarch64-apple-darwin.zip)
+- Windows (x64): [mw-x86_64-pc-windows-gnu.zip](https://github.com/lulivi/mw/releases/latest/download/mw-x86_64-pc-windows-gnu.zip)
+- Linux (x64, static): [mw-x86_64-unknown-linux-musl.zip](https://github.com/lulivi/mw/releases/latest/download/mw-x86_64-unknown-linux-musl.zip)
+
+Unzip it and use `./mw` (`mw.exe` on Windows) wherever the examples below say `./target/release/mw`. The binaries aren't signed: on macOS, run `xattr -d com.apple.quarantine mw` once if it refuses to open.
+
+## Requirements (building from source)
 
 - A recent stable Rust (`rustup update` if you already have it; otherwise see https://rustup.rs).
 

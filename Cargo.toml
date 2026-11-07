@@ -3,6 +3,7 @@ name = "mw"
 description = "Music Wrapped: your listening recap from your Spotify and YouTube Music data"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [dependencies]
 anyhow = "1.0.104"
