@@ -57,7 +57,7 @@ To have `mw` available from any folder, install it with `cargo install --path .`
 
 ### Cross-compiling
 
-With Docker installed, `./scripts/dist.sh` builds macOS (Apple Silicon), Windows (x64) and Linux (x64, static) binaries into `dist/`. No Rust targets or other toolchains are needed on your machine.
+With Docker installed, `./scripts/dist.sh` builds macOS (Apple Silicon), Windows (x64) and Linux (x64, static) binaries into `dist/<target>/`, plus a `dist/mw-<target>.zip` per target with the binary and its licenses. No Rust targets or other toolchains are needed on your machine.
 
 ## Options
 
