@@ -9,9 +9,8 @@ trap 'rm -rf "$data"' EXIT
 cargo build --release
 cargo run --release --example sample_data -- "$data"
 
-# The video IDs are fake: never look them up, even if YT_API_KEY is set.
 mw() {
-  env -u YT_API_KEY ./target/release/mw --spotify "$data/spotify" \
+  ./target/release/mw --spotify "$data/spotify" \
     --ytm "$data/watch-history.json" --overwrite "$@" >/dev/null
 }
 

@@ -9,7 +9,6 @@ mod normalize;
 mod render;
 mod sources;
 mod stats;
-mod youtube;
 
 use std::path::{Path, PathBuf};
 
@@ -69,18 +68,6 @@ struct Cli {
     /// Estimated minutes per YouTube Music play
     #[arg(long, default_value_t = 3.5)]
     ytm_avg_minutes: f64,
-
-    /// YouTube Data API v3 key to use each song's real length (optional)
-    #[arg(long, env = "YT_API_KEY", hide_env_values = true, value_name = "KEY")]
-    yt_api_key: Option<String>,
-
-    /// YouTube durations cache (default: yt-durations.json next to watch-history.json)
-    #[arg(long, value_name = "FILE")]
-    yt_cache: Option<PathBuf>,
-
-    /// Cap in minutes per YouTube Music play with real length (so a 2-hour mix doesn't count in full)
-    #[arg(long, default_value_t = 15.0)]
-    ytm_max_minutes: f64,
 
     /// Output PNG
     #[arg(long, value_name = "FILE", default_value = "wrapped.png")]
@@ -189,13 +176,7 @@ fn main() -> Result<()> {
     if wants(source, Source::YouTubeMusic)
         && let Some(file) = &cli.ytm
     {
-        let youtube = youtube_options(
-            cli.yt_api_key.as_deref(),
-            cli.yt_cache.as_deref(),
-            cli.ytm_max_minutes,
-            file,
-        );
-        plays.extend(load_ytm(file, cli.ytm_avg_minutes, youtube.as_ref())?);
+        plays.extend(load_ytm(file, cli.ytm_avg_minutes)?);
     }
 
     let filters = Filters {
@@ -229,54 +210,11 @@ fn load_spotify(dir: &Path) -> Result<Vec<Play>> {
     Ok(loaded.plays)
 }
 
-/// Loads the YouTube Music history. With `youtube`, the estimated lengths and the
-/// Takeout names are replaced with real ones from the YouTube API.
-fn load_ytm(
-    file: &Path,
-    avg_minutes: f64,
-    youtube: Option<&youtube::Options>,
-) -> Result<Vec<Play>> {
-    let mut loaded = sources::ytmusic::load(file, avg_minutes)?;
+/// Loads the YouTube Music history and reports how many plays were read.
+fn load_ytm(file: &Path, avg_minutes: f64) -> Result<Vec<Play>> {
+    let loaded = sources::ytmusic::load(file, avg_minutes)?;
     report("YouTube Music", loaded.plays.len(), &loaded.warnings);
-
-    if let Some(opt) = youtube {
-        let r = youtube::resolve(&mut loaded.plays, opt);
-        eprintln!(
-            "YouTube Music: real length for {} of {} distinct songs, names for {} ({} fetched now in {} requests; cache at {})",
-            fmt_int(r.resolved as u64),
-            fmt_int(r.distinct as u64),
-            fmt_int(r.named as u64),
-            fmt_int(r.fetched as u64),
-            r.requests,
-            opt.cache_path.display()
-        );
-        for w in &r.warnings {
-            eprintln!("  warning: {w}");
-        }
-    }
     Ok(loaded.plays)
-}
-
-/// Options for fetching real YouTube lengths, if an API key was given. The cache
-/// defaults to yt-durations.json next to the history file.
-fn youtube_options(
-    api_key: Option<&str>,
-    cache: Option<&Path>,
-    max_minutes: f64,
-    history: &Path,
-) -> Option<youtube::Options> {
-    let key = api_key.map(str::trim).filter(|k| !k.is_empty())?;
-    let cache_path = cache.map(Path::to_path_buf).unwrap_or_else(|| {
-        history
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("yt-durations.json")
-    });
-    Some(youtube::Options {
-        api_key: key.to_string(),
-        cache_path,
-        max_minutes,
-    })
 }
 
 /// Is this source included? `None` means all sources.
@@ -361,20 +299,6 @@ fn print_stats(s: &Stats) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn youtube_options_need_a_key() {
-        let history = Path::new("data/watch-history.json");
-        assert!(youtube_options(None, None, 15.0, history).is_none());
-        assert!(youtube_options(Some("  "), None, 15.0, history).is_none());
-
-        let opt = youtube_options(Some(" KEY "), None, 15.0, history).unwrap();
-        assert_eq!(opt.api_key, "KEY");
-        assert_eq!(opt.cache_path, Path::new("data/yt-durations.json"));
-
-        let opt = youtube_options(Some("KEY"), Some(Path::new("c.json")), 15.0, history).unwrap();
-        assert_eq!(opt.cache_path, Path::new("c.json"));
-    }
 
     #[test]
     fn wants_matches_filter() {

@@ -80,7 +80,6 @@ fn color_changes_the_image() {
     let render = |name: &str, args: &[&str]| {
         let out = dir.path().join(name);
         let o = bin()
-            .env_remove("YT_API_KEY")
             .arg("--spotify")
             .arg(fixtures().join("spotify"))
             .args(args)
@@ -103,7 +102,6 @@ fn keeps_an_existing_image_unless_overwriting() {
     std::fs::write(&out, "keep me").unwrap();
     let run = |args: &[&str]| {
         bin()
-            .env_remove("YT_API_KEY")
             .arg("--spotify")
             .arg(fixtures().join("spotify"))
             .arg("--out")

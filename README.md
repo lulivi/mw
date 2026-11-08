@@ -58,17 +58,6 @@ The basic history ("Account data", `StreamingHistory_music_*.json`) also works, 
 3. Under "Multiple formats", change history from HTML to **JSON**.
 4. From the ZIP, take `Takeout/YouTube and YouTube Music/history/watch-history.json`.
 
-### YouTube API key (optional)
-
-It gives real song lengths instead of an estimate, and song names that don't depend on your account language (see [How it counts](#how-it-counts)).
-
-1. Go to console.cloud.google.com with your Google account and create a project.
-2. In "APIs & Services" → "Library", search for **YouTube Data API v3** and click "Enable".
-3. In "Credentials" → "Create credentials" → "API key". Copy the key.
-4. Pass it with `--yt-api-key YOUR_KEY` or set the `YT_API_KEY` environment variable.
-
-It's free (10,000 units a day, 1 per 50 songs) and lengths and names are cached in `yt-durations.json`. Don't share your key.
-
 ## Running
 
 ```bash
@@ -88,8 +77,6 @@ On Windows use `mw.exe`; after `cargo install`, just `mw`. Run `mw --help` for e
 
 - Spotify plays shorter than 30 seconds don't count (they're skips), same as the official Wrapped. Podcasts and audiobooks are ignored.
 - YouTube Music doesn't record how long you listened to each song, only that you played it. Each play counts `--ytm-avg-minutes` minutes, which is why the total is marked as estimated when YouTube Music is included ("≈" in the terminal, "estimated minutes" in the image).
-- With `--yt-api-key`, each YouTube Music song counts its real length (capped at 15 min) and that mark goes away. It assumes you listened to the whole song. Songs that can't be looked up (deleted videos, no connection, quota exhausted) keep the estimate.
-- With `--yt-api-key`, song and artist names come from the video title and channel instead of the Takeout text, which carries wording like "Watched" in your account language. They're video titles, not official song credits: a channel can be a label rather than the artist. Songs that can't be looked up keep the Takeout names.
 - Artists and songs are merged across sources ignoring case, accents and YouTube add-ons like " - Topic" or "(Official Video)".
 
 ## Development
@@ -103,7 +90,7 @@ cargo run --release -- --help      # build and run with arguments
 ./scripts/dist.sh                  # cross-compile the release zips into dist/ (needs Docker)
 ```
 
-Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `youtube.rs` fetches real YouTube lengths and names, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
+Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
 
 ## Credits
 
