@@ -100,7 +100,8 @@ With Docker installed, `./scripts/dist.sh` builds macOS (Apple Silicon), Windows
 ## Development
 
 ```bash
-cargo test
+./scripts/test.sh     # cargo test
+./scripts/lint.sh     # cargo fmt --check + clippy, as CI runs them
 ```
 
 Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `durations.rs` fetches real YouTube lengths, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
