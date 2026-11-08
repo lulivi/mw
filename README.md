@@ -4,6 +4,25 @@ Your own "Wrapped" from your Spotify and YouTube Music data: total minutes, minu
 
 Everything runs locally: your data never leaves your computer.
 
+## Samples
+
+Made from a fictional listening history (2021–2025; YouTube Music from 2024).
+
+<table>
+  <tr>
+    <td><a href="docs/samples/year.png"><img src="docs/samples/year.png" width="200" alt="2025, Spotify only"></a></td>
+    <td><a href="docs/samples/range.png"><img src="docs/samples/range.png" width="200" alt="Jun 2024 to May 2025, both sources"></a></td>
+    <td><a href="docs/samples/history.png"><img src="docs/samples/history.png" width="200" alt="Whole history, by year"></a></td>
+    <td><a href="docs/samples/minutes.png"><img src="docs/samples/minutes.png" width="200" alt="2025 ranked by minutes"></a></td>
+  </tr>
+  <tr>
+    <td>One year, Spotify only<br><code>--year 2025 --source spotify</code></td>
+    <td>Custom range, both sources (estimated minutes)<br><code>--from 2024-06-01 --to 2025-05-31 --color purple</code></td>
+    <td>Whole history: over 24 months, the chart goes by year<br><code>--color blue</code></td>
+    <td>Top lists by minutes<br><code>--year 2025 --rank-by minutes --color green</code></td>
+  </tr>
+</table>
+
 ## Download
 
 Prebuilt binaries of the latest release (no Rust needed):
@@ -102,6 +121,7 @@ With Docker installed, `./scripts/dist.sh` builds macOS (Apple Silicon), Windows
 ```bash
 ./scripts/test.sh     # cargo test
 ./scripts/lint.sh     # cargo fmt --check + clippy, as CI runs them
+./scripts/samples.sh  # regenerate docs/samples/ after changing the image
 ```
 
 Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `durations.rs` fetches real YouTube lengths, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
