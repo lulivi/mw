@@ -8,20 +8,17 @@ Everything runs locally: your data never leaves your computer.
 
 Made from a fictional listening history (2021–2025; YouTube Music from 2024).
 
-<table>
-  <tr>
-    <td><a href="docs/samples/year.png"><img src="docs/samples/year.png" width="200" alt="2025, Spotify only"></a></td>
-    <td><a href="docs/samples/range.png"><img src="docs/samples/range.png" width="200" alt="Jun 2024 to May 2025, both sources"></a></td>
-    <td><a href="docs/samples/history.png"><img src="docs/samples/history.png" width="200" alt="Whole history, by year"></a></td>
-    <td><a href="docs/samples/minutes.png"><img src="docs/samples/minutes.png" width="200" alt="2025 ranked by minutes"></a></td>
-  </tr>
-  <tr>
-    <td>One year, Spotify only<br><code>--year 2025 --source spotify</code></td>
-    <td>Custom range, both sources (estimated minutes)<br><code>--from 2024-06-01 --to 2025-05-31 --color purple</code></td>
-    <td>Whole history: over 24 months, the chart goes by year<br><code>--color blue</code></td>
-    <td>Top lists by minutes<br><code>--year 2025 --rank-by minutes --color green</code></td>
-  </tr>
-</table>
+<p>
+  <a href="docs/samples/year.png"><img src="docs/samples/year.png" width="200" alt="Sample 1: 2025, Spotify only"></a>
+  <a href="docs/samples/range.png"><img src="docs/samples/range.png" width="200" alt="Sample 2: Jun 2024 to May 2025, both sources"></a>
+  <a href="docs/samples/history.png"><img src="docs/samples/history.png" width="200" alt="Sample 3: whole history, by year"></a>
+  <a href="docs/samples/minutes.png"><img src="docs/samples/minutes.png" width="200" alt="Sample 4: 2025 ranked by minutes"></a>
+</p>
+
+1. One year, Spotify only: `--year 2025 --source spotify`
+2. Custom range, both sources (estimated minutes): `--from 2024-06-01 --to 2025-05-31 --color purple`
+3. Whole history; past 24 months the chart goes by year: `--color blue`
+4. Top lists by minutes: `--year 2025 --rank-by minutes --color green`
 
 ## Download
 
