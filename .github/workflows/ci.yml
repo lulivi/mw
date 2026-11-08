@@ -28,7 +28,6 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      # A PAT, not GITHUB_TOKEN: PRs opened with GITHUB_TOKEN don't trigger CI on their own.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
