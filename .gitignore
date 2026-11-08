@@ -19,6 +19,7 @@ rustc-ice-*.txt
 # Program output
 *.png
 *.json
+!docs/samples/*.png
 
 # Cross-compiled binaries (scripts/dist.sh)
 dist
