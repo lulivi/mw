@@ -102,7 +102,7 @@ cargo run --release -- --help      # build and run with arguments
 ./scripts/dist.sh                  # cross-compile the release zips into dist/ (needs Docker)
 ```
 
-Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `durations.rs` fetches real YouTube lengths, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
+Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `youtube.rs` fetches real YouTube lengths, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
 
 ## Credits
 
