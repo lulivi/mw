@@ -20,6 +20,7 @@ rustc-ice-*.txt
 *.png
 *.json
 !docs/samples/*.png
+!data/*.json
 
 # Cross-compiled binaries (scripts/dist.sh)
 dist

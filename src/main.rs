@@ -7,6 +7,7 @@
 mod model;
 mod normalize;
 mod render;
+mod songdb;
 mod sources;
 mod stats;
 
@@ -68,6 +69,14 @@ struct Cli {
     /// Estimated minutes per YouTube Music play
     #[arg(long, default_value_t = 3.5)]
     ytm_avg_minutes: f64,
+
+    /// Song database with real YouTube Music lengths: a URL or a local file [default: the one in the mw repository]
+    #[arg(long, value_name = "URL|PATH", conflicts_with = "offline")]
+    db: Option<String>,
+
+    /// Use the cached copy of the song database instead of downloading it
+    #[arg(long)]
+    offline: bool,
 
     /// Output PNG
     #[arg(long, value_name = "FILE", default_value = "wrapped.png")]
@@ -176,7 +185,11 @@ fn main() -> Result<()> {
     if wants(source, Source::YouTubeMusic)
         && let Some(file) = &cli.ytm
     {
-        plays.extend(load_ytm(file, cli.ytm_avg_minutes)?);
+        plays.extend(load_ytm(
+            file,
+            cli.ytm_avg_minutes,
+            songdb::Origin::new(cli.db.as_deref(), cli.offline),
+        )?);
     }
 
     let filters = Filters {
@@ -210,10 +223,24 @@ fn load_spotify(dir: &Path) -> Result<Vec<Play>> {
     Ok(loaded.plays)
 }
 
-/// Loads the YouTube Music history and reports how many plays were read.
-fn load_ytm(file: &Path, avg_minutes: f64) -> Result<Vec<Play>> {
-    let loaded = sources::ytmusic::load(file, avg_minutes)?;
+/// Loads the YouTube Music history and replaces the estimates with the real
+/// lengths in the song database, when it can be read.
+fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Play>> {
+    let mut loaded = sources::ytmusic::load(file, avg_minutes)?;
     report("YouTube Music", loaded.plays.len(), &loaded.warnings);
+
+    let (db, warnings) = songdb::load(db, songdb::cache_path().as_deref());
+    if let Some(db) = db {
+        let matched = songdb::apply(&mut loaded.plays, &db);
+        eprintln!(
+            "YouTube Music: real length for {} of {} from the song database",
+            fmt_int(matched as u64),
+            fmt_count(loaded.plays.len() as u64, "play")
+        );
+    }
+    for w in &warnings {
+        eprintln!("  warning: {w}");
+    }
     Ok(loaded.plays)
 }
 

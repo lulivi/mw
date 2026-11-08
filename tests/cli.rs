@@ -30,6 +30,9 @@ fn builds_mobile_png_with_both_sources() {
         .arg(fixtures().join("spotify"))
         .arg("--ytm")
         .arg(fixtures().join("watch-history.json"))
+        .arg("--offline")
+        // An empty cache folder: no song database, so the estimates are kept.
+        .env("XDG_CACHE_HOME", dir.path())
         .args(["--year", "2025"])
         .arg("--out")
         .arg(&out)
