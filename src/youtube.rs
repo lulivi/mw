@@ -1,28 +1,54 @@
-//! Real length of YouTube Music songs via the official YouTube API
+//! Real length and names of YouTube Music songs via the official YouTube API
 //! (YouTube Data API v3, `videos.list`).
 //!
 //! Optional: only used when an API key is provided. Each request asks for up to 50
 //! videos and costs 1 unit of a free 10,000-unit daily quota. Results are stored in
-//! a JSON cache: videos with a known length are never fetched again. Those left
-//! without one (`null`) are retried on every run with a key, in case it was a
+//! a JSON cache: videos with a known length and title are never fetched again.
+//! Those missing either are retried on every run with a key, in case it was a
 //! transient failure; a deleted video only costs its share of one request.
+//!
+//! The video title and channel replace the names read from Takeout, so they don't
+//! depend on the "Watched"-like wording Takeout adds in each language.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::model::{Play, Source};
+use crate::normalize::{clean_artist, strip_artist_prefix};
 
 /// Endpoint of the YouTube Data API `videos.list` method.
 const API_URL: &str = "https://www.googleapis.com/youtube/v3/videos";
 /// Most videos the API accepts in one request.
 const BATCH: usize = 50;
 
-/// Video ID -> seconds. `None` = the video no longer exists or has no length.
-type Cache = BTreeMap<String, Option<u64>>;
+/// What the API told about a video. Every field is `None` when the video no
+/// longer exists or the API didn't return it.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+struct Video {
+    /// Length in seconds.
+    secs: Option<u64>,
+    /// Video title, as the uploader wrote it.
+    title: Option<String>,
+    /// Name of the channel that uploaded it.
+    channel: Option<String>,
+}
+
+/// Video ID -> what is known about it.
+type Cache = BTreeMap<String, Video>;
+
+/// A cache entry as stored on disk: the current [`Video`], or the older format
+/// that only held the seconds (`null` when unknown).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Stored {
+    Secs(Option<u64>),
+    Video(Video),
+}
 
 /// How to fetch and apply real lengths.
 pub struct Options {
@@ -41,6 +67,8 @@ pub struct Report {
     pub distinct: usize,
     /// How many of them now have a real length.
     pub resolved: usize,
+    /// How many of them now have names from the API.
+    pub named: usize,
     /// Lengths obtained from the API in this run.
     pub fetched: usize,
     /// Successful API requests made in this run.
@@ -62,6 +90,15 @@ struct Item {
     id: String,
     #[serde(rename = "contentDetails")]
     content_details: Option<ContentDetails>,
+    snippet: Option<Snippet>,
+}
+
+/// The `snippet` part of an [`Item`].
+#[derive(Deserialize)]
+struct Snippet {
+    title: Option<String>,
+    #[serde(rename = "channelTitle")]
+    channel_title: Option<String>,
 }
 
 /// The `contentDetails` part of an [`Item`].
@@ -71,9 +108,10 @@ struct ContentDetails {
     duration: Option<String>,
 }
 
-/// Fetches the lengths missing from the cache and applies them to the YouTube Music
-/// plays. Network or quota failures don't stop the program: a warning is reported
-/// and songs without a length keep the estimate.
+/// Fetches the lengths and names missing from the cache and applies them to the
+/// YouTube Music plays. Network or quota failures don't stop the program: a warning
+/// is reported, songs without a length keep the estimate and songs without names
+/// keep the ones from Takeout.
 pub fn resolve(plays: &mut [Play], opt: &Options) -> Report {
     let mut report = Report::default();
     let mut cache = match load_cache(&opt.cache_path) {
@@ -95,14 +133,20 @@ pub fn resolve(plays: &mut [Play], opt: &Options) -> Report {
 
     for chunk in missing.chunks(BATCH) {
         match fetch(&opt.api_key, chunk) {
-            Ok(found) => {
+            Ok(mut found) => {
                 report.requests += 1;
                 for id in chunk {
-                    let secs = found.get(id).copied();
-                    if secs.is_some() {
+                    let new = found.remove(id).unwrap_or_default();
+                    if new.secs.is_some() {
                         report.fetched += 1;
                     }
-                    cache.insert(id.clone(), secs);
+                    let entry = cache.entry(id.clone()).or_default();
+                    // Keep what was known if the API no longer returns it.
+                    *entry = Video {
+                        secs: new.secs.or(entry.secs),
+                        title: new.title.or(entry.title.take()),
+                        channel: new.channel.or(entry.channel.take()),
+                    };
                 }
             }
             Err(e) => {
@@ -124,22 +168,28 @@ pub fn resolve(plays: &mut [Play], opt: &Options) -> Report {
     }
 
     let max_ms = (opt.max_minutes.max(0.0) * 60_000.0) as u64;
-    report.resolved = apply(plays, &cache, max_ms);
+    (report.resolved, report.named) = apply(plays, &cache, max_ms);
     report
 }
 
-/// IDs to fetch: those not in the cache or cached without a length.
+/// IDs to fetch: those not in the cache or cached without a length or title.
 fn pending(ids: &BTreeSet<&str>, cache: &Cache) -> Vec<String> {
     ids.iter()
-        .filter(|id| !matches!(cache.get(**id), Some(Some(_))))
+        .filter(|id| {
+            cache
+                .get(**id)
+                .is_none_or(|v| v.secs.is_none() || v.title.is_none())
+        })
         .map(|id| id.to_string())
         .collect()
 }
 
-/// Replaces the estimate with the real length (capped). Returns how many distinct
-/// videos have a length.
-fn apply(plays: &mut [Play], cache: &Cache, max_ms: u64) -> usize {
+/// Replaces the estimate with the real length (capped) and the Takeout names with
+/// the API ones. Returns how many distinct videos have a length and how many have
+/// names.
+fn apply(plays: &mut [Play], cache: &Cache, max_ms: u64) -> (usize, usize) {
     let mut resolved = BTreeSet::new();
+    let mut named = BTreeSet::new();
     for p in plays
         .iter_mut()
         .filter(|p| p.source == Source::YouTubeMusic)
@@ -147,25 +197,44 @@ fn apply(plays: &mut [Play], cache: &Cache, max_ms: u64) -> usize {
         let Some(id) = p.video_id.as_deref() else {
             continue;
         };
-        if let Some(Some(secs)) = cache.get(id)
-            && *secs > 0
+        let Some(v) = cache.get(id) else {
+            continue;
+        };
+        if let Some(secs) = v.secs
+            && secs > 0
         {
             p.ms_played = (secs * 1000).min(max_ms);
             p.estimated = false;
             resolved.insert(id.to_string());
         }
+        if let Some((track, artist)) = names(v) {
+            p.track = track;
+            p.artist = artist;
+            named.insert(id.to_string());
+        }
     }
-    resolved.len()
+    (resolved.len(), named.len())
 }
 
-/// Asks the API for the lengths of up to [`BATCH`] videos. Returns video ID ->
-/// seconds; videos it doesn't know about are simply missing from the result.
+/// Song and artist from the video title and channel, cleaned like the Takeout
+/// ones. `None` if either ends up empty.
+fn names(v: &Video) -> Option<(String, String)> {
+    let artist = clean_artist(v.channel.as_deref()?);
+    let title = v.title.as_deref()?.trim();
+    if artist.is_empty() || title.is_empty() {
+        return None;
+    }
+    Some((strip_artist_prefix(title, &artist), artist))
+}
+
+/// Asks the API for the lengths and names of up to [`BATCH`] videos. Videos it
+/// doesn't know about are simply missing from the result.
 ///
 /// Fails on connection problems and non-success responses, such as an invalid key
 /// or an exhausted quota.
-fn fetch(key: &str, ids: &[String]) -> Result<HashMap<String, u64>> {
+fn fetch(key: &str, ids: &[String]) -> Result<HashMap<String, Video>> {
     let mut resp = ureq::get(API_URL)
-        .query("part", "contentDetails")
+        .query("part", "contentDetails,snippet")
         .query("id", ids.join(","))
         .query("maxResults", BATCH.to_string())
         .query("key", key)
@@ -192,16 +261,27 @@ fn fetch(key: &str, ids: &[String]) -> Result<HashMap<String, u64>> {
     parse_response(&text)
 }
 
-/// Extracts video ID -> seconds from a response body, skipping videos without a
-/// readable length.
-fn parse_response(text: &str) -> Result<HashMap<String, u64>> {
+/// Extracts video ID -> [`Video`] from a response body. An unreadable length is
+/// left as `None`.
+fn parse_response(text: &str) -> Result<HashMap<String, Video>> {
     let resp: Response = serde_json::from_str(text).context("unexpected response")?;
     Ok(resp
         .items
         .into_iter()
-        .filter_map(|it| {
-            let secs = parse_iso8601(&it.content_details?.duration?)?;
-            Some((it.id, secs))
+        .map(|it| {
+            let secs = it
+                .content_details
+                .and_then(|c| c.duration)
+                .and_then(|d| parse_iso8601(&d));
+            let (title, channel) = it
+                .snippet
+                .map_or((None, None), |s| (s.title, s.channel_title));
+            let video = Video {
+                secs,
+                title,
+                channel,
+            };
+            (it.id, video)
         })
         .collect())
 }
@@ -235,14 +315,29 @@ fn parse_iso8601(s: &str) -> Option<u64> {
     num.is_empty().then_some(total)
 }
 
-/// Reads the cache. A missing file is an empty cache, not an error.
+/// Reads the cache, in either format. A missing file is an empty cache, not an
+/// error.
 fn load_cache(path: &Path) -> Result<Cache> {
     if !path.exists() {
         return Ok(Cache::new());
     }
     let text =
         fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
-    serde_json::from_str(&text).with_context(|| format!("{} is not a valid cache", path.display()))
+    let stored: BTreeMap<String, Stored> = serde_json::from_str(&text)
+        .with_context(|| format!("{} is not a valid cache", path.display()))?;
+    Ok(stored
+        .into_iter()
+        .map(|(id, s)| {
+            let v = match s {
+                Stored::Secs(secs) => Video {
+                    secs,
+                    ..Video::default()
+                },
+                Stored::Video(v) => v,
+            };
+            (id, v)
+        })
+        .collect())
 }
 
 /// Writes the cache as readable JSON.
@@ -268,17 +363,31 @@ mod tests {
         assert_eq!(parse_iso8601("PT3"), None);
     }
 
+    fn video(secs: Option<u64>, title: Option<&str>, channel: Option<&str>) -> Video {
+        Video {
+            secs,
+            title: title.map(Into::into),
+            channel: channel.map(Into::into),
+        }
+    }
+
     #[test]
     fn parses_api_response() {
         let json = r#"{"kind":"youtube#videoListResponse","items":[
-            {"kind":"youtube#video","id":"aaaaaaaaaaa","contentDetails":{"duration":"PT3M30S"}},
-            {"kind":"youtube#video","id":"bbbbbbbbbbb","contentDetails":{"duration":"PT1H"}}
-        ],"pageInfo":{"totalResults":2,"resultsPerPage":2}}"#;
+            {"kind":"youtube#video","id":"aaaaaaaaaaa","contentDetails":{"duration":"PT3M30S"},
+             "snippet":{"title":"DESPECHÁ","channelTitle":"ROSALÍA - Topic"}},
+            {"kind":"youtube#video","id":"bbbbbbbbbbb","contentDetails":{"duration":"PT1H"}},
+            {"kind":"youtube#video","id":"ccccccccccc","contentDetails":{"duration":"P1M"},
+             "snippet":{"title":"Live","channelTitle":"X"}}
+        ],"pageInfo":{"totalResults":3,"resultsPerPage":3}}"#;
         let found = parse_response(json).unwrap();
-        assert_eq!(found["aaaaaaaaaaa"], 210);
-        assert_eq!(found["bbbbbbbbbbb"], 3600);
+        assert_eq!(
+            found["aaaaaaaaaaa"],
+            video(Some(210), Some("DESPECHÁ"), Some("ROSALÍA - Topic"))
+        );
+        assert_eq!(found["bbbbbbbbbbb"], video(Some(3600), None, None));
+        assert_eq!(found["ccccccccccc"], video(None, Some("Live"), Some("X")));
     }
-
     fn yt(id: &str) -> Play {
         Play {
             ts: Utc::now(),
@@ -301,10 +410,10 @@ mod tests {
             yt("ddddddddddd"),
         ];
         let mut cache = Cache::new();
-        cache.insert("aaaaaaaaaaa".into(), Some(180));
-        cache.insert("bbbbbbbbbbb".into(), Some(7200)); // 2-hour mix
-        cache.insert("ccccccccccc".into(), None); // deleted video
-        let resolved = apply(&mut plays, &cache, 15 * 60_000);
+        cache.insert("aaaaaaaaaaa".into(), video(Some(180), None, None));
+        cache.insert("bbbbbbbbbbb".into(), video(Some(7200), None, None)); // 2-hour mix
+        cache.insert("ccccccccccc".into(), Video::default()); // deleted video
+        let (resolved, _) = apply(&mut plays, &cache, 15 * 60_000);
         assert_eq!(resolved, 2);
         assert_eq!((plays[0].ms_played, plays[0].estimated), (180_000, false));
         assert_eq!((plays[1].ms_played, plays[1].estimated), (900_000, false));
@@ -313,12 +422,46 @@ mod tests {
     }
 
     #[test]
-    fn retries_nulls() {
+    fn api_names_replace_takeout_ones() {
+        // Takeout in a language without a known prefix: the wording stays in the title.
+        let mut p = yt("aaaaaaaaaaa");
+        p.track = "Ha guardato Brillante".into();
+        p.artist = "Repion".into();
+        let mut plays = vec![p, yt("bbbbbbbbbbb"), yt("ccccccccccc"), yt("ddddddddddd")];
         let mut cache = Cache::new();
-        cache.insert("aaaaaaaaaaa".into(), Some(200));
-        cache.insert("bbbbbbbbbbb".into(), None);
-        let ids: BTreeSet<&str> = ["aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc"].into();
-        assert_eq!(pending(&ids, &cache), vec!["bbbbbbbbbbb", "ccccccccccc"]);
+        cache.insert(
+            "aaaaaaaaaaa".into(),
+            video(Some(180), Some("Repion - Brillante"), Some("RepionVEVO")),
+        );
+        cache.insert(
+            "bbbbbbbbbbb".into(),
+            video(Some(180), Some("Song"), Some("  ")),
+        );
+        cache.insert("ccccccccccc".into(), video(None, Some(" Song "), None));
+        let (resolved, named) = apply(&mut plays, &cache, 15 * 60_000);
+        assert_eq!((resolved, named), (2, 1));
+        assert_eq!(
+            (plays[0].track.as_str(), plays[0].artist.as_str()),
+            ("Brillante", "Repion")
+        );
+        // Missing or empty names: Takeout ones are kept.
+        for p in &plays[1..] {
+            assert_eq!((p.track.as_str(), p.artist.as_str()), ("T", "A"));
+        }
+    }
+
+    #[test]
+    fn retries_missing_lengths_and_titles() {
+        let mut cache = Cache::new();
+        cache.insert("aaaaaaaaaaa".into(), video(Some(200), Some("T"), Some("A")));
+        cache.insert("bbbbbbbbbbb".into(), Video::default());
+        cache.insert("ccccccccccc".into(), video(Some(200), None, None)); // old cache
+        let ids: BTreeSet<&str> =
+            ["aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc", "ddddddddddd"].into();
+        assert_eq!(
+            pending(&ids, &cache),
+            vec!["bbbbbbbbbbb", "ccccccccccc", "ddddddddddd"]
+        );
     }
 
     #[test]
@@ -326,9 +469,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("c.json");
         let mut cache = Cache::new();
-        cache.insert("aaaaaaaaaaa".into(), Some(200));
-        cache.insert("ccccccccccc".into(), None);
+        cache.insert("aaaaaaaaaaa".into(), video(Some(200), Some("T"), Some("A")));
+        cache.insert("ccccccccccc".into(), Video::default());
         save_cache(&path, &cache).unwrap();
         assert_eq!(load_cache(&path).unwrap(), cache);
+    }
+
+    #[test]
+    fn reads_old_cache_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.json");
+        fs::write(&path, r#"{"aaaaaaaaaaa": 200, "ccccccccccc": null}"#).unwrap();
+        let cache = load_cache(&path).unwrap();
+        assert_eq!(cache["aaaaaaaaaaa"], video(Some(200), None, None));
+        assert_eq!(cache["ccccccccccc"], Video::default());
     }
 }

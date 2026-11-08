@@ -229,8 +229,8 @@ fn load_spotify(dir: &Path) -> Result<Vec<Play>> {
     Ok(loaded.plays)
 }
 
-/// Loads the YouTube Music history. With `youtube`, the estimated lengths are
-/// replaced with real ones from the YouTube API.
+/// Loads the YouTube Music history. With `youtube`, the estimated lengths and the
+/// Takeout names are replaced with real ones from the YouTube API.
 fn load_ytm(
     file: &Path,
     avg_minutes: f64,
@@ -242,9 +242,10 @@ fn load_ytm(
     if let Some(opt) = youtube {
         let r = youtube::resolve(&mut loaded.plays, opt);
         eprintln!(
-            "YouTube Music: real length for {} of {} distinct songs ({} fetched now in {} requests; cache at {})",
+            "YouTube Music: real length for {} of {} distinct songs, names for {} ({} fetched now in {} requests; cache at {})",
             fmt_int(r.resolved as u64),
             fmt_int(r.distinct as u64),
+            fmt_int(r.named as u64),
             fmt_int(r.fetched as u64),
             r.requests,
             opt.cache_path.display()
