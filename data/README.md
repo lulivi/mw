@@ -11,7 +11,7 @@ run and keeps a copy in its cache folder (`~/.cache/mw/songs.json` on Linux).
 {
   "version": 1,
   "songs": {
-    "rosalia\u001fdespecha": {
+    "rosalia|despecha": {
       "artist": "ROSALÍA",
       "title": "DESPECHÁ",
       "seconds": 157,
@@ -24,7 +24,7 @@ run and keeps a copy in its cache folder (`~/.cache/mw/songs.json` on Linux).
 ```
 
 - The key is `normalize::track_key(artist, title)`: the artist key and the
-  cleaned title, joined by `\u001f`.
+  cleaned title, joined by `|` (the artist key has only letters and digits, so the first `|` always ends it).
 - `seconds`: length of the song, greater than 0.
 - `source`: where the length comes from: `musicbrainz`, `spotify` or `manual`.
 - `mbid` (optional): MusicBrainz recording ID.

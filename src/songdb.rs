@@ -197,9 +197,9 @@ mod tests {
     }
 
     const DB: &str = r#"{"version": 1, "songs": {
-        "rosalia\u001fdespecha": {"artist": "ROSALÍA", "title": "DESPECHÁ", "seconds": 157,
+        "rosalia|despecha": {"artist": "ROSALÍA", "title": "DESPECHÁ", "seconds": 157,
             "source": "musicbrainz", "mbid": "x", "video_ids": ["aaaaaaaaaaa"]},
-        "repion\u001fbrillante": {"artist": "Repion", "title": "Brillante", "seconds": 200,
+        "repion|brillante": {"artist": "Repion", "title": "Brillante", "seconds": 200,
             "source": "manual"}
     }}"#;
 
