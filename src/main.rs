@@ -4,12 +4,12 @@
 //! This is the command line entry point: it parses the arguments, loads the
 //! selected sources, computes the stats, prints them and saves the image.
 
-mod durations;
 mod model;
 mod normalize;
 mod render;
 mod sources;
 mod stats;
+mod youtube;
 
 use std::path::{Path, PathBuf};
 
@@ -189,13 +189,13 @@ fn main() -> Result<()> {
     if wants(source, Source::YouTubeMusic)
         && let Some(file) = &cli.ytm
     {
-        let durations = durations_options(
+        let youtube = youtube_options(
             cli.yt_api_key.as_deref(),
             cli.yt_cache.as_deref(),
             cli.ytm_max_minutes,
             file,
         );
-        plays.extend(load_ytm(file, cli.ytm_avg_minutes, durations.as_ref())?);
+        plays.extend(load_ytm(file, cli.ytm_avg_minutes, youtube.as_ref())?);
     }
 
     let filters = Filters {
@@ -229,22 +229,23 @@ fn load_spotify(dir: &Path) -> Result<Vec<Play>> {
     Ok(loaded.plays)
 }
 
-/// Loads the YouTube Music history. With `durations`, the estimated lengths are
-/// replaced with real ones from the YouTube API.
+/// Loads the YouTube Music history. With `youtube`, the estimated lengths and the
+/// Takeout names are replaced with real ones from the YouTube API.
 fn load_ytm(
     file: &Path,
     avg_minutes: f64,
-    durations: Option<&durations::Options>,
+    youtube: Option<&youtube::Options>,
 ) -> Result<Vec<Play>> {
     let mut loaded = sources::ytmusic::load(file, avg_minutes)?;
     report("YouTube Music", loaded.plays.len(), &loaded.warnings);
 
-    if let Some(opt) = durations {
-        let r = durations::resolve(&mut loaded.plays, opt);
+    if let Some(opt) = youtube {
+        let r = youtube::resolve(&mut loaded.plays, opt);
         eprintln!(
-            "YouTube Music: real length for {} of {} distinct songs ({} fetched now in {} requests; cache at {})",
+            "YouTube Music: real length for {} of {} distinct songs, names for {} ({} fetched now in {} requests; cache at {})",
             fmt_int(r.resolved as u64),
             fmt_int(r.distinct as u64),
+            fmt_int(r.named as u64),
             fmt_int(r.fetched as u64),
             r.requests,
             opt.cache_path.display()
@@ -258,12 +259,12 @@ fn load_ytm(
 
 /// Options for fetching real YouTube lengths, if an API key was given. The cache
 /// defaults to yt-durations.json next to the history file.
-fn durations_options(
+fn youtube_options(
     api_key: Option<&str>,
     cache: Option<&Path>,
     max_minutes: f64,
     history: &Path,
-) -> Option<durations::Options> {
+) -> Option<youtube::Options> {
     let key = api_key.map(str::trim).filter(|k| !k.is_empty())?;
     let cache_path = cache.map(Path::to_path_buf).unwrap_or_else(|| {
         history
@@ -271,7 +272,7 @@ fn durations_options(
             .unwrap_or_else(|| Path::new("."))
             .join("yt-durations.json")
     });
-    Some(durations::Options {
+    Some(youtube::Options {
         api_key: key.to_string(),
         cache_path,
         max_minutes,
@@ -362,16 +363,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn durations_options_need_a_key() {
+    fn youtube_options_need_a_key() {
         let history = Path::new("data/watch-history.json");
-        assert!(durations_options(None, None, 15.0, history).is_none());
-        assert!(durations_options(Some("  "), None, 15.0, history).is_none());
+        assert!(youtube_options(None, None, 15.0, history).is_none());
+        assert!(youtube_options(Some("  "), None, 15.0, history).is_none());
 
-        let opt = durations_options(Some(" KEY "), None, 15.0, history).unwrap();
+        let opt = youtube_options(Some(" KEY "), None, 15.0, history).unwrap();
         assert_eq!(opt.api_key, "KEY");
         assert_eq!(opt.cache_path, Path::new("data/yt-durations.json"));
 
-        let opt = durations_options(Some("KEY"), Some(Path::new("c.json")), 15.0, history).unwrap();
+        let opt = youtube_options(Some("KEY"), Some(Path::new("c.json")), 15.0, history).unwrap();
         assert_eq!(opt.cache_path, Path::new("c.json"));
     }
 
