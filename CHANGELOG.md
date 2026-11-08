@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/lulivi/mw/compare/v0.1.2...v0.1.3) - 2026-11-08
+
+### Other
+
+- *(release)* open release PRs with a personal token ([#13](https://github.com/lulivi/mw/pull/13))
+
 ## [0.1.2](https://github.com/lulivi/mw/compare/v0.1.1...v0.1.2) - 2026-11-08
 
 ### Other
