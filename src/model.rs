@@ -37,6 +37,6 @@ pub struct Play {
     pub estimated: bool,
     /// Service it comes from.
     pub source: Source,
-    /// YouTube video ID (YouTube Music only), used to fetch its real length.
+    /// YouTube video ID (YouTube Music only), used to look up the song database.
     pub video_id: Option<String>,
 }

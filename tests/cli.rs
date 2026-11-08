@@ -30,6 +30,9 @@ fn builds_mobile_png_with_both_sources() {
         .arg(fixtures().join("spotify"))
         .arg("--ytm")
         .arg(fixtures().join("watch-history.json"))
+        .arg("--offline")
+        // An empty cache folder: no song database, so the estimates are kept.
+        .env("XDG_CACHE_HOME", dir.path())
         .args(["--year", "2025"])
         .arg("--out")
         .arg(&out)
@@ -80,7 +83,6 @@ fn color_changes_the_image() {
     let render = |name: &str, args: &[&str]| {
         let out = dir.path().join(name);
         let o = bin()
-            .env_remove("YT_API_KEY")
             .arg("--spotify")
             .arg(fixtures().join("spotify"))
             .args(args)
@@ -103,7 +105,6 @@ fn keeps_an_existing_image_unless_overwriting() {
     std::fs::write(&out, "keep me").unwrap();
     let run = |args: &[&str]| {
         bin()
-            .env_remove("YT_API_KEY")
             .arg("--spotify")
             .arg(fixtures().join("spotify"))
             .arg("--out")
