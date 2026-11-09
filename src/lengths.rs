@@ -3,7 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Deserializer, Serialize, de::Error};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 use crate::model::Play;
 use crate::normalize::track_key;
@@ -13,21 +14,69 @@ const MIN_PLAYS: usize = 2;
 /// How close to the median a full play must be to count as agreeing with it.
 pub const AGREE_MS: u64 = 1_000;
 /// `check` of a song with a single full play.
-const ONE_PLAY: &str = "one full play";
+pub const ONE_PLAY: &str = "one full play";
+/// Start of the `check` of a song whose full plays don't agree, followed by them.
+pub const FULL_PLAYS: &str = "full plays: ";
 
-/// One song of an export file: only what the song database needs.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+/// One song of a contribution file: only what the song database needs.
+///
+/// Written with the fields in this order, `check` right before `seconds` and
+/// `seconds` last, so deleting the `check` line never leaves a dangling comma.
+/// `seconds` is written as `"m:ss"` while there is a `check` (easy to compare
+/// with the Spotify app), as a number otherwise, and `null` when unknown.
+#[derive(Debug, Default, PartialEq, Deserialize)]
 pub struct SongLength {
     pub artist: String,
     pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub album: Option<String>,
-    /// Seconds; read also as `"m:ss"`, for lengths typed by hand.
-    #[serde(deserialize_with = "seconds_or_mmss")]
-    pub seconds: u64,
-    /// Why `seconds` is only a guess. Import skips the song while it is set.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// YouTube video IDs of the song.
+    #[serde(default)]
+    pub video_ids: Vec<String>,
+    /// MusicBrainz recording ID.
+    #[serde(default)]
+    pub mbid: Option<String>,
+    /// Where the length comes from (`musicbrainz`, `spotify`, `manual`).
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Why the entry needs review. Import skips the song while it is set.
+    #[serde(default)]
     pub check: Option<String>,
+    /// Seconds, `None` when unknown; read also as `"m:ss"`, for lengths typed by hand.
+    #[serde(deserialize_with = "seconds_or_mmss")]
+    pub seconds: Option<u64>,
+}
+
+impl Serialize for SongLength {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut m = s.serialize_map(None)?;
+        m.serialize_entry("artist", &self.artist)?;
+        m.serialize_entry("title", &self.title)?;
+        if let Some(album) = &self.album {
+            m.serialize_entry("album", album)?;
+        }
+        if !self.video_ids.is_empty() {
+            m.serialize_entry("video_ids", &self.video_ids)?;
+        }
+        if let Some(mbid) = &self.mbid {
+            m.serialize_entry("mbid", mbid)?;
+        }
+        if let Some(source) = &self.source {
+            m.serialize_entry("source", source)?;
+        }
+        match (&self.check, self.seconds) {
+            (Some(check), Some(seconds)) => {
+                m.serialize_entry("check", check)?;
+                m.serialize_entry("seconds", &mmss(seconds))?;
+            }
+            (Some(check), None) => {
+                m.serialize_entry("check", check)?;
+                m.serialize_entry("seconds", &None::<u64>)?;
+            }
+            (None, seconds) => m.serialize_entry("seconds", &seconds)?,
+        }
+        m.end()
+    }
 }
 
 /// What [`measure`] found.
@@ -47,7 +96,8 @@ pub struct Measured {
 /// with the song key) doesn't have yet: the median of its full plays. It is
 /// trusted when at least two of them are within [`AGREE_MS`] of it (others may be
 /// off by a seek or a resume); otherwise the song gets a `check` saying why, with
-/// the lengths played. Names and album are the most frequent spelling.
+/// the lengths played, and only a single full play keeps its length. Names and
+/// album are the most frequent spelling.
 pub fn measure(full_plays: &[Play], known: impl Fn(&str) -> bool) -> Measured {
     let mut by_key: BTreeMap<String, Vec<&Play>> = BTreeMap::new();
     for p in full_plays {
@@ -80,21 +130,24 @@ pub fn measure(full_plays: &[Play], known: impl Fn(&str) -> bool) -> Measured {
             .iter()
             .filter(|&&m| (2 * m).abs_diff(twice) <= 2 * AGREE_MS)
             .count();
-        let check = if ms.len() < MIN_PLAYS {
+        let seconds = Some((twice + 1000) / 2000);
+        let (check, seconds) = if ms.len() < MIN_PLAYS {
             out.single += 1;
-            Some(ONE_PLAY.to_string())
+            (Some(ONE_PLAY.to_string()), seconds)
         } else if agreeing < MIN_PLAYS {
+            // A median of two versions is no real length.
             out.inconsistent += 1;
-            Some(format!("full plays: {}", played(&ms)))
+            (Some(format!("{FULL_PLAYS}{}", played(&ms))), None)
         } else {
-            None
+            (None, seconds)
         };
         out.songs.push(SongLength {
             artist,
             title,
             album,
-            seconds: (twice + 1000) / 2000,
             check,
+            seconds,
+            ..Default::default()
         });
     }
     out
@@ -123,7 +176,7 @@ pub fn mmss(seconds: u64) -> String {
 }
 
 /// Parses a length as seconds (`229`) or minutes and seconds (`3:49`).
-fn parse_length(s: &str) -> Option<u64> {
+pub fn parse_length(s: &str) -> Option<u64> {
     let s = s.trim();
     match s.split_once(':') {
         Some((m, sec)) if sec.len() == 2 => {
@@ -135,24 +188,26 @@ fn parse_length(s: &str) -> Option<u64> {
     }
 }
 
-/// Reads `seconds` as a number or as a string [`parse_length`] understands.
-fn seconds_or_mmss<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+/// Reads `seconds` as `null`, a number or a string [`parse_length`] understands.
+fn seconds_or_mmss<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Length {
         Seconds(u64),
         Text(String),
     }
-    match Length::deserialize(d)? {
-        Length::Seconds(n) => Ok(n),
-        Length::Text(t) => parse_length(&t)
+    match Option::<Length>::deserialize(d)? {
+        None => Ok(None),
+        Some(Length::Seconds(n)) => Ok(Some(n)),
+        Some(Length::Text(t)) => parse_length(&t)
+            .map(Some)
             .ok_or_else(|| D::Error::custom(format!("invalid length {t:?}: use seconds or m:ss"))),
     }
 }
 
 /// Twice the median of sorted milliseconds (the median of an even count is the
 /// mean of the two middle ones), so it stays an integer.
-fn twice_median(sorted_ms: &[u64]) -> u64 {
+pub fn twice_median(sorted_ms: &[u64]) -> u64 {
     let n = sorted_ms.len();
     if n % 2 == 1 {
         2 * sorted_ms[n / 2]
@@ -162,7 +217,7 @@ fn twice_median(sorted_ms: &[u64]) -> u64 {
 }
 
 /// The most frequent item; on a tie, the first one seen.
-fn most_common<T: PartialEq>(items: impl Iterator<Item = T>) -> Option<T> {
+pub fn most_common<T: PartialEq>(items: impl Iterator<Item = T>) -> Option<T> {
     let mut counts: Vec<(T, usize)> = vec![];
     for item in items {
         match counts.iter_mut().find(|(t, _)| *t == item) {
@@ -199,7 +254,7 @@ mod tests {
     }
 
     /// (title, seconds, check) of each song.
-    fn summary(m: &Measured) -> Vec<(&str, u64, Option<&str>)> {
+    fn summary(m: &Measured) -> Vec<(&str, Option<u64>, Option<&str>)> {
         m.songs
             .iter()
             .map(|s| (s.title.as_str(), s.seconds, s.check.as_deref()))
@@ -223,9 +278,9 @@ mod tests {
         assert_eq!(
             summary(&m),
             [
-                ("Odd", 201, None),
-                ("Even", 181, None),
-                ("Once", 150, Some("one full play"))
+                ("Odd", Some(201), None),
+                ("Even", Some(181), None),
+                ("Once", Some(150), Some("one full play"))
             ]
         );
         assert_eq!((m.single, m.inconsistent), (1, 0));
@@ -252,9 +307,9 @@ mod tests {
         assert_eq!(
             summary(&m),
             [
-                ("Edit", 210, Some("full plays: 3:00 ×2, 4:00 ×2")),
-                ("Near", 182, Some("full plays: 3:00, 3:03")),
-                ("Seeked", 229, None),
+                ("Edit", None, Some("full plays: 3:00 ×2, 4:00 ×2")),
+                ("Near", None, Some("full plays: 3:00, 3:03")),
+                ("Seeked", Some(229), None),
             ]
         );
         assert_eq!((m.single, m.inconsistent), (0, 2));
@@ -268,10 +323,11 @@ mod tests {
             ))
             .map(|s| s.seconds)
         };
-        assert_eq!(read("229").unwrap(), 229);
-        assert_eq!(read(r#""229""#).unwrap(), 229);
-        assert_eq!(read(r#""3:49""#).unwrap(), 229);
-        assert_eq!(read(r#"" 12:05 ""#).unwrap(), 725);
+        assert_eq!(read("229").unwrap(), Some(229));
+        assert_eq!(read(r#""229""#).unwrap(), Some(229));
+        assert_eq!(read(r#""3:49""#).unwrap(), Some(229));
+        assert_eq!(read(r#"" 12:05 ""#).unwrap(), Some(725));
+        assert_eq!(read("null").unwrap(), None);
         for bad in [r#""3:5""#, r#""3:60""#, r#""abc""#, r#""""#, "-1"] {
             assert!(read(bad).is_err(), "{bad}");
         }
@@ -300,30 +356,39 @@ mod tests {
     }
 
     #[test]
-    fn export_has_only_the_song_fields() {
-        let songs = [
-            SongLength {
-                artist: "A".into(),
-                title: "T".into(),
-                album: Some("L".into()),
-                seconds: 200,
-                check: None,
-            },
+    fn field_order_and_seconds() {
+        let entry = |check: Option<&str>, seconds| SongLength {
+            artist: "A".into(),
+            title: "T".into(),
+            album: Some("L".into()),
+            video_ids: vec!["bbbbbbbbbbb".into()],
+            mbid: Some("m".into()),
+            source: Some("musicbrainz".into()),
+            check: check.map(Into::into),
+            seconds,
+        };
+        let text = serde_json::to_string(&[
+            entry(None, Some(229)),
+            entry(Some("one full play"), Some(150)),
+            entry(Some("no length"), None),
             SongLength {
                 artist: "B".into(),
                 title: "U".into(),
-                album: None,
-                seconds: 100,
-                check: Some("one full play".into()),
+                seconds: Some(100),
+                ..Default::default()
             },
-        ];
-        let json = serde_json::to_value(&songs).unwrap();
+        ])
+        .unwrap();
+        let all = r#""artist":"A","title":"T","album":"L","video_ids":["bbbbbbbbbbb"],"mbid":"m","source":"musicbrainz""#;
         assert_eq!(
-            json,
-            serde_json::json!([
-                {"artist": "A", "title": "T", "album": "L", "seconds": 200},
-                {"artist": "B", "title": "U", "seconds": 100, "check": "one full play"}
-            ])
+            text,
+            format!(
+                r#"[{{{all},"seconds":229}},{{{all},"check":"one full play","seconds":"2:30"}},{{{all},"check":"no length","seconds":null}},{{"artist":"B","title":"U","seconds":100}}]"#
+            )
         );
+        // What is written is read back the same.
+        let back: Vec<SongLength> = serde_json::from_str(&text).unwrap();
+        assert_eq!(back[1].seconds, Some(150));
+        assert_eq!(back[2].seconds, None);
     }
 }

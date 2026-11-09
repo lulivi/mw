@@ -278,6 +278,13 @@ pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Impo
             out.to_check += 1;
             continue;
         }
+        let Some(seconds) = s.seconds else {
+            bail!(
+                "{} · {} has no length: set \"seconds\" or put back a \"check\"",
+                s.artist,
+                s.title
+            );
+        };
         let (artist, title) = (s.artist.trim(), s.title.trim());
         if artist.is_empty() || title.is_empty() {
             out.unnamed += 1;
@@ -286,14 +293,14 @@ pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Impo
         let key = track_key(artist, title);
         if entries.contains_key(&key) {
             out.present += 1;
-        } else if !IMPORT_RANGE.contains(&s.seconds) {
+        } else if !IMPORT_RANGE.contains(&seconds) {
             out.out_of_range.push(s);
         } else {
             let mut entry = json!({"artist": artist, "title": title});
             if let Some(album) = s.album.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
                 entry["album"] = album.into();
             }
-            entry["seconds"] = s.seconds.into();
+            entry["seconds"] = seconds.into();
             entry["source"] = "spotify".into();
             entries.insert(key, entry);
             out.added.push(s);
@@ -373,8 +380,8 @@ mod tests {
             artist: artist.into(),
             title: title.into(),
             album: Some("Album".into()),
-            seconds,
-            check: None,
+            seconds: Some(seconds),
+            ..Default::default()
         }
     }
 
@@ -415,6 +422,20 @@ mod tests {
         assert_eq!(doc["songs"]["rosalia|despecha"]["mbid"], "x");
         assert_eq!(doc["songs"].as_object().unwrap().len(), 3);
         parse(&fs::read_to_string(&file).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn import_rejects_no_length_without_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("songs.json");
+        save(&file, DB).unwrap();
+        let unknown = SongLength {
+            seconds: None,
+            ..length("A", "Unknown", 0)
+        };
+        let err = import(&file, vec![unknown], false).unwrap_err();
+        assert!(err.to_string().contains("A · Unknown"), "{err}");
+        assert_eq!(fs::read_to_string(&file).unwrap(), DB);
     }
 
     #[test]

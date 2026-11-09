@@ -19,3 +19,11 @@ _Avoid_: Average, default length
 **Full play**:
 A Spotify play that ran to the end of the song, so its play time is the song length.
 _Avoid_: Trackdone play, complete listen
+
+**Contribution file**:
+A file of songs and their song length that a listener sends to the maintainer, without their listening history.
+_Avoid_: Export file, durations file
+
+**Check**:
+A mark on an entry of a contribution file saying it needs review before it goes into the song database, and why.
+_Avoid_: Flag, unverified

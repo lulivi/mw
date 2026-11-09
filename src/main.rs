@@ -357,7 +357,7 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
     print_songs("Already in the song database", m.known, [], false);
     if m.single + m.inconsistent > 0 {
         println!(
-            "Songs to check have a \"check\" field: fix \"seconds\" if needed (seconds or \"m:ss\") and remove \"check\" to import them."
+            "Songs to check have a \"check\" field: set \"seconds\" if needed (seconds or \"m:ss\") and remove \"check\" to import them."
         );
     }
     Ok(())
@@ -380,7 +380,12 @@ fn import_spotify(from: &ImportFrom, file: &Path, dry_run: bool, list: bool) -> 
 
     let verb = if dry_run { "Would add to" } else { "Added to" };
     let length = |s: &lengths::SongLength| {
-        format!("{} · {}  ({})", s.artist, s.title, lengths::mmss(s.seconds))
+        format!(
+            "{} · {}  ({})",
+            s.artist,
+            s.title,
+            lengths::mmss(s.seconds.unwrap_or(0))
+        )
     };
     print_songs(
         &format!("{verb} {}", file.display()),
