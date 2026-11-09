@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/lulivi/mw/compare/v0.2.0...v0.2.1) - 2026-11-09
+
+### Added
+
+- *(db)* add the first round of songs ([#30](https://github.com/lulivi/mw/pull/30))
+
 ## [0.2.0](https://github.com/lulivi/mw/compare/v0.1.4...v0.2.0) - 2026-11-09
 
 ### Added
