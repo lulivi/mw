@@ -4,6 +4,7 @@
 //! This is the command line entry point: it parses the arguments, loads the
 //! selected sources, computes the stats, prints them and saves the image.
 
+mod lengths;
 mod model;
 mod normalize;
 mod render;
@@ -11,12 +12,13 @@ mod songdb;
 mod sources;
 mod stats;
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 use chrono_tz::Tz;
-use clap::{Parser, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use model::{Play, Source};
 use render::{fmt_count, fmt_int, minutes, range_label};
@@ -24,8 +26,11 @@ use stats::{Filters, RankBy, Stats};
 
 /// Music Wrapped: your listening recap from your Spotify and YouTube Music data exports.
 #[derive(Parser)]
-#[command(name = "mw", version)]
+#[command(name = "mw", version, args_conflicts_with_subcommands = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
     #[arg(long, value_name = "DIR")]
     spotify: Option<PathBuf>,
@@ -70,13 +75,8 @@ struct Cli {
     #[arg(long, default_value_t = 3.5)]
     ytm_avg_minutes: f64,
 
-    /// Song database with the song length of YouTube Music plays: a URL or a local file [default: the one in the mw repository]
-    #[arg(long, value_name = "URL|PATH", conflicts_with = "offline")]
-    db: Option<String>,
-
-    /// Use the cached copy of the song database instead of downloading it
-    #[arg(long)]
-    offline: bool,
+    #[command(flatten)]
+    db: DbArgs,
 
     /// Output PNG
     #[arg(long, value_name = "FILE", default_value = "wrapped.png")]
@@ -89,6 +89,46 @@ struct Cli {
     /// Only print the stats in the terminal
     #[arg(long)]
     no_image: bool,
+}
+
+/// Where the song database is read from.
+#[derive(Args)]
+struct DbArgs {
+    /// Song database with the song length of YouTube Music plays: a URL or a local file [default: the one in the mw repository]
+    #[arg(long, value_name = "URL|PATH", conflicts_with = "offline")]
+    db: Option<String>,
+
+    /// Use the cached copy of the song database instead of downloading it
+    #[arg(long)]
+    offline: bool,
+}
+
+impl DbArgs {
+    fn origin(&self) -> songdb::Origin<'_> {
+        songdb::Origin::new(self.db.as_deref(), self.offline)
+    }
+}
+
+/// Commands other than the recap.
+#[derive(Subcommand)]
+enum Command {
+    /// Song database tools
+    #[command(subcommand)]
+    Db(DbCommand),
+}
+
+/// `mw db` commands.
+#[derive(Subcommand)]
+enum DbCommand {
+    /// Write the song lengths of your Spotify full plays to a file you can share, without your listening history
+    ExportSpotify {
+        /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
+        #[arg(long, value_name = "DIR")]
+        spotify: PathBuf,
+
+        #[command(flatten)]
+        db: DbArgs,
+    },
 }
 
 /// Values of `--source`: which services count towards the stats.
@@ -140,6 +180,11 @@ enum RankArg {
 /// wasn't given, or when no plays are left after filtering.
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Some(Command::Db(cmd)) = &cli.command {
+        return match cmd {
+            DbCommand::ExportSpotify { spotify, db } => export_spotify(spotify, db.origin()),
+        };
+    }
 
     if cli.spotify.is_none() && cli.ytm.is_none() {
         bail!("Provide at least one source: --spotify <folder> and/or --ytm <watch-history.json>");
@@ -185,11 +230,7 @@ fn main() -> Result<()> {
     if wants(source, Source::YouTubeMusic)
         && let Some(file) = &cli.ytm
     {
-        plays.extend(load_ytm(
-            file,
-            cli.ytm_avg_minutes,
-            songdb::Origin::new(cli.db.as_deref(), cli.offline),
-        )?);
+        plays.extend(load_ytm(file, cli.ytm_avg_minutes, cli.db.origin())?);
     }
 
     let filters = Filters {
@@ -242,6 +283,73 @@ fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Pla
         eprintln!("  warning: {w}");
     }
     Ok(loaded.plays)
+}
+
+/// Writes the song lengths of the Spotify full plays that the song database
+/// doesn't have to `spotify-durations-<local date and time>.json`, and lists the
+/// songs left out.
+fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
+    let plays = sources::spotify::full_plays(dir)?;
+    let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
+    for w in &warnings {
+        eprintln!("warning: {w}");
+    }
+    if db.is_none() {
+        eprintln!("warning: no song database; exporting every song");
+    }
+    let m = lengths::measure(&plays, |k| db.as_ref().is_some_and(|d| d.contains(k)));
+
+    let file = chrono::Local::now()
+        .format("spotify-durations-%Y-%m-%d-%H%M%S.json")
+        .to_string();
+    let json = serde_json::to_string_pretty(&m.songs)? + "\n";
+    fs::write(&file, json).with_context(|| format!("cannot write {file}"))?;
+
+    println!(
+        "Wrote {} to {file}",
+        fmt_count(m.songs.len() as u64, "song")
+    );
+    println!(
+        "{} already in the song database",
+        fmt_count(m.known as u64, "song")
+    );
+    print_left_out(
+        &format!(
+            "Not exported, full plays differ by more than {} s",
+            lengths::MAX_SPREAD_MS / 1000
+        ),
+        &m.inconsistent,
+        true,
+    );
+    print_left_out("Not exported, only one full play", &m.single, false);
+    Ok(())
+}
+
+/// Prints a list of songs left out under a heading with their count.
+fn print_left_out(heading: &str, songs: &[lengths::LeftOut], range: bool) {
+    if songs.is_empty() {
+        return;
+    }
+    println!("\n{heading} ({}):", fmt_int(songs.len() as u64));
+    for s in songs {
+        if range {
+            println!(
+                "  {} · {}  ({}–{})",
+                s.artist,
+                s.title,
+                mmss(s.min_ms),
+                mmss(s.max_ms)
+            );
+        } else {
+            println!("  {} · {}", s.artist, s.title);
+        }
+    }
+}
+
+/// Milliseconds as `m:ss`.
+fn mmss(ms: u64) -> String {
+    let s = (ms + 500) / 1000;
+    format!("{}:{:02}", s / 60, s % 60)
 }
 
 /// Is this source included? `None` means all sources.

@@ -80,6 +80,16 @@ On Windows use `mw.exe`; after `cargo install`, just `mw`. Run `mw --help` for e
 - Songs in the [song database](data/README.md) count their song length instead, assuming you listened to the whole song. A play is matched by video ID (then the database names replace the Takeout ones, which carry wording like "Watched" in your account language) or else by artist and title. `mw` downloads the database on every run and keeps a copy in your cache folder: with no connection it uses that copy, and with no copy every play keeps the estimate. `--offline` uses only the copy; `--db <URL|PATH>` reads another database.
 - Artists and songs are merged across sources ignoring case, accents and YouTube add-ons like " - Topic" or "(Official Video)".
 
+## Sharing song lengths
+
+Your Spotify history can fill the song database for YouTube Music listeners, without sharing what you listened to or when:
+
+```bash
+./mw db export-spotify --spotify ./my_data/spotify
+```
+
+It writes `spotify-durations-<date>-<time>.json` with only the artist, title, album and length of each song, leaving out the songs the database already has. A song's length is the median of its full plays (plays that reached the end of the song), and needs at least two of them that differ by 5 seconds or less: songs with a single full play, or whose full plays disagree, are listed instead. It needs the Extended streaming history. Send the file to the maintainer to add it to the database.
+
 ## Development
 
 ```bash
@@ -91,7 +101,7 @@ cargo run --release -- --help      # build and run with arguments
 ./scripts/dist.sh                  # cross-compile the release zips into dist/ (needs Docker)
 ```
 
-Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `songdb.rs` loads the song database and applies its lengths, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
+Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `songdb.rs` loads the song database and applies its lengths, `lengths.rs` measures song lengths from Spotify full plays for `mw db`, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
 
 ## Credits
 

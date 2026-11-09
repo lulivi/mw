@@ -31,6 +31,13 @@ pub struct Db {
     songs: BTreeMap<String, Song>,
 }
 
+impl Db {
+    /// Whether the database has the song with this key ([`track_key`]).
+    pub fn contains(&self, key: &str) -> bool {
+        self.songs.contains_key(key)
+    }
+}
+
 /// One song in the database.
 #[derive(Debug, Deserialize)]
 struct Song {

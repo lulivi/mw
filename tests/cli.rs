@@ -152,3 +152,58 @@ fn clear_errors() {
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("No plays in that date range"));
 }
+
+#[test]
+fn exports_spotify_song_lengths() {
+    let dir = tempfile::tempdir().unwrap();
+    let history = dir.path().join("Streaming_History_Audio_2025_0.json");
+    let entry = |artist: &str, track: &str, ms: u64, reason: &str| {
+        format!(
+            r#"{{"ts":"2025-01-02T10:00:00Z","ms_played":{ms},"master_metadata_track_name":"{track}","master_metadata_album_artist_name":"{artist}","master_metadata_album_album_name":"Album","reason_end":"{reason}","ip_addr":"1.2.3.4"}}"#
+        )
+    };
+    let entries = [
+        entry("A", "New", 200_000, "trackdone"),
+        entry("A", "New", 202_000, "trackdone"),
+        entry("A", "New", 90_000, "fwdbtn"),
+        entry("A", "Known", 180_000, "trackdone"),
+        entry("A", "Known", 180_000, "trackdone"),
+        entry("A", "Once", 150_000, "trackdone"),
+    ];
+    std::fs::write(&history, format!("[{}]", entries.join(","))).unwrap();
+    let db = dir.path().join("songs.json");
+    std::fs::write(
+        &db,
+        r#"{"version": 1, "songs": {"a|known": {"artist": "A", "title": "Known", "seconds": 180, "source": "manual"}}}"#,
+    )
+    .unwrap();
+
+    let o = bin()
+        .args(["db", "export-spotify", "--spotify"])
+        .arg(&history)
+        .arg("--db")
+        .arg(&db)
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&o.stdout);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(
+        stdout.contains("only one full play (1):\n  A · Once"),
+        "{stdout}"
+    );
+
+    let file = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| {
+            let name = p.file_name().unwrap().to_string_lossy();
+            name.starts_with("spotify-durations-") && name.ends_with(".json")
+        })
+        .expect("export file");
+    let json: serde_json::Value = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!([{"artist": "A", "title": "New", "album": "Album", "seconds": 201}])
+    );
+}

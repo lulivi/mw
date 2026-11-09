@@ -29,7 +29,6 @@ pub struct Play {
     /// Artist or channel name, without YouTube channel add-ons.
     pub artist: String,
     /// Album name, when the source provides it.
-    #[allow(dead_code)]
     pub album: Option<String>,
     /// Listening time in milliseconds.
     pub ms_played: u64,
