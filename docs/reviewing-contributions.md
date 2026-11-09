@@ -53,9 +53,19 @@ before `seconds`, so you can delete the whole `check` line.
   prints these songs at the end.
 
 MusicBrainz allows about one request per second, so a thousand songs take about
-20 minutes. Use `--limit N` to look up only N songs. The file is saved after
-every song, so you can stop it at any time (Ctrl-C) and run it again later: it
-continues with the songs not looked up yet.
+20 minutes. It prints the songs to review as it finds them, and a last line
+that keeps updating with the totals and the time left:
+
+```
+Resolving 340 songs to check with MusicBrainz
+not in MusicBrainz: Mala Rodriguez · Por la noche - Remix con Ari y Meko
+to check: Repion · Brillante  (musicbrainz 3:52, played 3:49)
+[12/340] found 9, far 1, not found 2 · 6 min left
+```
+
+Use `--limit N` to look up only N songs. The file is saved after every song, so
+you can stop it at any time (Ctrl-C): what's on screen tells how far it got,
+and running it again continues with the songs not looked up yet.
 
 ## 2. Review
 

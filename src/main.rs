@@ -14,6 +14,7 @@ mod sources;
 mod stats;
 
 use std::fs;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -397,20 +398,39 @@ fn write_contribution(prefix: &str, songs: &[lengths::SongLength]) -> Result<()>
     Ok(())
 }
 
-/// Looks up the songs to check of a contribution file in MusicBrainz and says
-/// what is left to review.
+/// Looks up the songs to check of a contribution file in MusicBrainz, printing
+/// the songs to review as they come and, in a terminal, one status line that
+/// updates in place.
 fn resolve(file: &Path, limit: Option<usize>) -> Result<()> {
     let mut client =
         musicbrainz::Client::new(musicbrainz::URL, musicbrainz::DELAY, musicbrainz::BACKOFF);
-    let r = musicbrainz::resolve(file, &mut client, limit)?;
-    println!("Found in MusicBrainz: {}", fmt_int(r.found as u64));
+    let tty = std::io::stdout().is_terminal();
+    let r = musicbrainz::resolve(file, &mut client, limit, |note, status| {
+        let mut out = std::io::stdout().lock();
+        // Return to the start of the status line and clear it.
+        let clear = if tty { "\r\x1b[K" } else { "" };
+        let end = if tty { "" } else { "\n" };
+        if let Some(note) = note {
+            let _ = writeln!(out, "{clear}{note}");
+        }
+        let _ = write!(out, "{clear}{status}{end}");
+        let _ = out.flush();
+    })?;
+    if r.found + r.far.len() + r.not_found.len() == 0 {
+        println!("Nothing to resolve: every song to check was already looked up.");
+        return Ok(());
+    }
+    if tty {
+        println!();
+    }
+    println!("\nFound in MusicBrainz: {}", fmt_int(r.found as u64));
     print_songs(
         "To check, far from the lengths played",
         r.far.len(),
-        r.far,
-        true,
+        [],
+        false,
     );
-    print_songs("Not in MusicBrainz", r.not_found.len(), r.not_found, true);
+    print_songs("Not in MusicBrainz", r.not_found.len(), [], false);
     if r.left > 0 {
         println!(
             "Still to look up: {} (run again to continue)",

@@ -14,6 +14,7 @@ use serde::Deserialize;
 
 use crate::lengths::{FULL_PLAYS, ONE_PLAY, SongLength, mmss, parse_length, twice_median};
 use crate::normalize::{artist_key, title_key};
+use crate::render::fmt_count;
 
 /// The recording search.
 pub const URL: &str = "https://musicbrainz.org/ws/2/recording";
@@ -213,8 +214,16 @@ pub struct Resolved {
 
 /// Looks up in MusicBrainz the entries of the contribution file at `path` that
 /// have a `check` and weren't looked up yet, at most `limit` of them, and edits
-/// the file after each one, so a run can be stopped and continued.
-pub fn resolve(path: &Path, client: &mut Client, limit: Option<usize>) -> Result<Resolved> {
+/// the file after each one, so a run can be stopped and continued. After each
+/// song, `progress` gets a note when the song needs review (not found, or far
+/// from the lengths played) and a status with the totals so far and the time
+/// left, so the last one sums up a run stopped with Ctrl-C.
+pub fn resolve(
+    path: &Path,
+    client: &mut Client,
+    limit: Option<usize>,
+    mut progress: impl FnMut(Option<&str>, &str),
+) -> Result<Resolved> {
     let text =
         fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
     let mut songs: Vec<SongLength> = serde_json::from_str(&text)
@@ -233,7 +242,25 @@ pub fn resolve(path: &Path, client: &mut Client, limit: Option<usize>) -> Result
         left: todo.len() - n,
         ..Default::default()
     };
-    for &i in &todo[..n] {
+    if n == 0 {
+        return Ok(out);
+    }
+    let header = match todo.len() {
+        all if n < all => format!("Resolving {n} of {all} songs to check with MusicBrainz"),
+        _ => format!(
+            "Resolving {} to check with MusicBrainz",
+            fmt_count(n as u64, "song")
+        ),
+    };
+    progress(
+        Some(&header),
+        &format!(
+            "[0/{n}] found 0, far 0, not found 0 · {} left",
+            duration(client.delay * n as u32)
+        ),
+    );
+    let start = Instant::now();
+    for (done, &i) in todo[..n].iter().enumerate() {
         let s = &mut songs[i];
         let name = format!("{} · {}", s.artist, s.title);
         let recordings = client.search(&s.artist, &s.title).with_context(|| {
@@ -241,16 +268,44 @@ pub fn resolve(path: &Path, client: &mut Client, limit: Option<usize>) -> Result
                 "cannot look up {name}; the songs looked up so far are saved, run again to continue"
             )
         })?;
-        if !settle(s, &recordings) {
-            out.not_found.push(name);
+        let note = if !settle(s, &recordings) {
+            out.not_found.push(name.clone());
+            Some(format!("not in MusicBrainz: {name}"))
         } else if let Some(check) = &s.check {
-            out.far.push(format!("{name}  ({check})"));
+            let far = format!("{name}  ({check})");
+            out.far.push(far.clone());
+            Some(format!("to check: {far}"))
         } else {
             out.found += 1;
-        }
+            None
+        };
         save(path, &songs)?;
+        let done = done + 1;
+        // The first request doesn't wait, so never count less than the delay.
+        let each = (start.elapsed() / done as u32).max(client.delay);
+        let left = each * (n - done) as u32;
+        progress(
+            note.as_deref(),
+            &format!(
+                "[{done}/{n}] found {}, far {}, not found {} · {} left",
+                out.found,
+                out.far.len(),
+                out.not_found.len(),
+                duration(left)
+            ),
+        );
     }
     Ok(out)
+}
+
+/// A rough duration: `40 s`, `12 min`, `2 h 05 min`.
+fn duration(d: Duration) -> String {
+    let s = d.as_secs();
+    match s {
+        0..60 => format!("{s} s"),
+        60..3600 => format!("{} min", s / 60),
+        _ => format!("{} h {:02} min", s / 3600, s / 60 % 60),
+    }
 }
 
 /// Writes the file through a temporary one, so stopping halfway never leaves it cut.
@@ -378,6 +433,14 @@ mod tests {
     }
 
     #[test]
+    fn rough_durations() {
+        let d = Duration::from_secs;
+        assert_eq!(duration(d(40)), "40 s");
+        assert_eq!(duration(d(725)), "12 min");
+        assert_eq!(duration(d(7500)), "2 h 05 min");
+    }
+
+    #[test]
     fn escapes_lucene() {
         assert_eq!(
             escape(r#"AC/DC: "Hi" (Live) - 1+1"#),
@@ -476,8 +539,34 @@ mod tests {
         .unwrap();
         let mut client = Client::new(&url, Duration::ZERO, Duration::ZERO);
 
-        let r = resolve(&file, &mut client, Some(2)).unwrap();
+        let mut lines = vec![];
+        let r = resolve(&file, &mut client, Some(2), |note, status| {
+            lines.push((note.map(str::to_string), status.to_string()))
+        })
+        .unwrap();
         assert_eq!((r.found, r.left), (1, 1));
+        let notes: Vec<_> = lines.iter().map(|(n, _)| n.as_deref()).collect();
+        assert_eq!(
+            notes,
+            [
+                Some("Resolving 2 of 3 songs to check with MusicBrainz"),
+                None,
+                Some("not in MusicBrainz: A · Missing")
+            ]
+        );
+        let status: Vec<_> = lines
+            .iter()
+            .map(|(_, s)| &s[..s.find(" · ").unwrap()])
+            .collect();
+        assert_eq!(
+            status,
+            [
+                "[0/2] found 0, far 0, not found 0",
+                "[1/2] found 1, far 0, not found 0",
+                "[2/2] found 1, far 0, not found 1"
+            ]
+        );
+        assert!(lines[2].1.ends_with(" · 0 s left"), "{}", lines[2].1);
         assert_eq!(r.not_found, ["A · Missing"]);
         assert_eq!(seen.lock().unwrap().len(), 2);
 
@@ -492,9 +581,12 @@ mod tests {
         );
         assert_eq!(got[4].check.as_deref(), Some("no length"));
 
-        // The next run looks up only what is left.
-        let r = resolve(&file, &mut client, None).unwrap();
+        // The next run looks up only what is left, and then nothing.
+        let r = resolve(&file, &mut client, None, |_, _| {}).unwrap();
         assert_eq!((r.not_found.len(), r.left), (1, 0));
+        let mut called = false;
+        resolve(&file, &mut client, None, |_, _| called = true).unwrap();
+        assert!(!called);
         assert_eq!(seen.lock().unwrap().len(), 3);
     }
 }
