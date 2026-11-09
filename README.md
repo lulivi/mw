@@ -82,13 +82,27 @@ On Windows use `mw.exe`; after `cargo install`, just `mw`. Run `mw --help` for e
 
 ## Sharing song lengths
 
-Your Spotify history can fill the song database for YouTube Music listeners, without sharing what you listened to or when:
+YouTube Music doesn't say how long a song is, so `mw` looks it up in the shared
+[song database](data/README.md). You can help fill it. Nothing about what you
+listened to or when leaves your computer: only artists, titles and lengths.
+
+**If you use Spotify**, share the lengths of the songs you played to the end:
 
 ```bash
 ./mw db export-spotify --spotify ./my_data/spotify
 ```
 
-It writes `spotify-durations-<date>-<time>.json` with only the artist, title, album and length of each song you played to the end, leaving out the songs the database already has. There are no dates or play counts. A song's length is the median of its full plays (plays that reached the end of the song), trusted when at least two of them are within a second of it; the others may be off because you seeked or resumed. Songs with a single full play, or whose full plays don't agree, get a best guess and a `"check"` field saying why, with the lengths played: they are not added to the database until someone fixes `"seconds"` if needed (as seconds or `"m:ss"`) and removes `"check"`. It needs the Extended streaming history. Send the file to the maintainer to add it to the database.
+**If you use YouTube Music**, share the songs the database is missing:
+
+```bash
+./mw db export-ytm --ytm ./my_data/watch-history.json
+```
+
+Each one writes a file (`spotify-durations-….json` or `ytm-missing-….json`)
+with only the songs the database doesn't have yet. Send it to the maintainer;
+there's nothing to edit. Spotify needs the Extended streaming history.
+
+How the files are checked and added: [docs/reviewing-contributions.md](docs/reviewing-contributions.md).
 
 ## Development
 
@@ -101,7 +115,7 @@ cargo run --release -- --help      # build and run with arguments
 ./scripts/dist.sh                  # cross-compile the release zips into dist/ (needs Docker)
 ```
 
-Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `songdb.rs` loads the song database and applies its lengths, `lengths.rs` measures song lengths from Spotify full plays for `mw db`, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
+Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `songdb.rs` loads the song database and applies its lengths, `lengths.rs` measures song lengths from Spotify full plays and defines the contribution file, `musicbrainz.rs` looks up song lengths for `mw db resolve`, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
 
 ## Credits
 

@@ -38,22 +38,10 @@ A play is matched by video ID first, then by key; otherwise it keeps the
 estimate. `cargo test` checks that every key matches its song, that no video ID
 is in two songs and that every length is positive.
 
-## Adding Spotify song lengths
+## Adding songs
 
-Listeners send the file written by `mw db export-spotify` (see the main
-README). Add it with:
-
-```bash
-mw db import-spotify --file spotify-durations-<date>-<time>.json --dry-run  # check first
-mw db import-spotify --file spotify-durations-<date>-<time>.json
-```
-
-`--spotify <DIR>` reads a Spotify history directly instead. The songs are added
-with `source: "spotify"`; a song already in the database is never overwritten,
-and lengths outside 30–1200 s are skipped (`--list` lists them). Songs that
-still have a `"check"` field are skipped too: to add one, check its length in
-Spotify, fix `"seconds"` if needed (`229` or `"3:49"`) and remove `"check"`. `--songs <PATH>` writes
-another file than `data/songs.json`.
+Listeners send contribution files (see the main README). How to check them and
+add them here: [docs/reviewing-contributions.md](../docs/reviewing-contributions.md).
 
 Bump `version` only for changes older `mw` releases can't read: they ignore the
 database and keep the estimates.

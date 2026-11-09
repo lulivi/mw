@@ -6,6 +6,7 @@
 
 mod lengths;
 mod model;
+mod musicbrainz;
 mod normalize;
 mod render;
 mod songdb;
@@ -13,6 +14,7 @@ mod sources;
 mod stats;
 
 use std::fs;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -130,11 +132,34 @@ enum DbCommand {
         db: DbArgs,
     },
 
-    /// Add Spotify song lengths to the song database file (for the maintainer)
-    #[command(hide = true)]
-    ImportSpotify {
+    /// Write the YouTube Music songs the song database doesn't have to a file you can share, without your listening history
+    ExportYtm {
+        /// Path to watch-history.json from Google Takeout
+        #[arg(long, value_name = "FILE")]
+        ytm: PathBuf,
+
         #[command(flatten)]
-        from: ImportFrom,
+        db: DbArgs,
+    },
+
+    /// Look up in MusicBrainz the songs of a contribution file that have a "check", editing the file (for the maintainer)
+    #[command(hide = true)]
+    Resolve {
+        /// A contribution file (written by `mw db export-spotify` or `export-ytm`)
+        #[arg(long, value_name = "PATH")]
+        file: PathBuf,
+
+        /// Look up at most this many songs (each takes over a second)
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+
+    /// Add the songs of a contribution file to the song database file (for the maintainer)
+    #[command(hide = true)]
+    Import {
+        /// A contribution file (written by `mw db export-spotify` or `export-ytm`)
+        #[arg(long, value_name = "PATH")]
+        file: PathBuf,
 
         /// Song database file to add the songs to
         #[arg(long, value_name = "PATH", default_value = "data/songs.json")]
@@ -148,19 +173,6 @@ enum DbCommand {
         #[arg(long)]
         list: bool,
     },
-}
-
-/// Where `mw db import-spotify` reads the song lengths from.
-#[derive(Args)]
-#[group(required = true, multiple = false)]
-struct ImportFrom {
-    /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
-    #[arg(long, value_name = "DIR")]
-    spotify: Option<PathBuf>,
-
-    /// A file written by `mw db export-spotify`
-    #[arg(long, value_name = "PATH")]
-    file: Option<PathBuf>,
 }
 
 /// Values of `--source`: which services count towards the stats.
@@ -215,12 +227,14 @@ fn main() -> Result<()> {
     if let Some(Command::Db(cmd)) = &cli.command {
         return match cmd {
             DbCommand::ExportSpotify { spotify, db } => export_spotify(spotify, db.origin()),
-            DbCommand::ImportSpotify {
-                from,
+            DbCommand::ExportYtm { ytm, db } => export_ytm(ytm, db.origin()),
+            DbCommand::Resolve { file, limit } => resolve(file, *limit),
+            DbCommand::Import {
+                file,
                 songs,
                 dry_run,
                 list,
-            } => import_spotify(from, songs, *dry_run, *list),
+            } => import(file, songs, *dry_run, *list),
         };
     }
 
@@ -337,16 +351,7 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
     }
     let m = lengths::measure(&plays, |k| db.as_ref().is_some_and(|d| d.contains(k)));
 
-    let file = chrono::Local::now()
-        .format("spotify-durations-%Y-%m-%d-%H%M%S.json")
-        .to_string();
-    let json = serde_json::to_string_pretty(&m.songs)? + "\n";
-    fs::write(&file, json).with_context(|| format!("cannot write {file}"))?;
-
-    println!(
-        "Wrote {} to {file}",
-        fmt_count(m.songs.len() as u64, "song")
-    );
+    write_contribution("spotify-durations", &m.songs)?;
     print_songs("  to check, only one full play", m.single, [], false);
     print_songs(
         "  to check, full plays don't agree on a length",
@@ -357,30 +362,98 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
     print_songs("Already in the song database", m.known, [], false);
     if m.single + m.inconsistent > 0 {
         println!(
-            "Songs to check have a \"check\" field: fix \"seconds\" if needed (seconds or \"m:ss\") and remove \"check\" to import them."
+            "Songs to check have a \"check\" field: set \"seconds\" if needed (seconds or \"m:ss\") and remove \"check\" to import them."
         );
     }
     Ok(())
 }
 
-/// Adds song lengths from a Spotify history or an export file to the song
-/// database file, and counts (with `list`, lists) what it added and skipped.
-fn import_spotify(from: &ImportFrom, file: &Path, dry_run: bool, list: bool) -> Result<()> {
-    let songs = match (&from.spotify, &from.file) {
-        (Some(dir), _) => lengths::measure(&sources::spotify::full_plays(dir)?, |_| false).songs,
-        (None, Some(path)) => {
-            let text = fs::read_to_string(path)
-                .with_context(|| format!("cannot read {}", path.display()))?;
-            serde_json::from_str(&text)
-                .with_context(|| format!("{} is not an export-spotify file", path.display()))?
+/// Writes the YouTube Music songs the song database doesn't have to
+/// `ytm-missing-<local date and time>.json`.
+fn export_ytm(file: &Path, origin: songdb::Origin) -> Result<()> {
+    let loaded = sources::ytmusic::load(file, 0.0)?;
+    report("YouTube Music", loaded.plays.len(), &loaded.warnings);
+    let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
+    for w in &warnings {
+        eprintln!("warning: {w}");
+    }
+    if db.is_none() {
+        eprintln!("warning: no song database; exporting every song");
+    }
+    let songs = songdb::missing(&loaded.plays, db.as_ref());
+    write_contribution("ytm-missing", &songs)?;
+    println!("Send this file to the maintainer.");
+    Ok(())
+}
+
+/// Writes `songs` to `<prefix>-<local date and time>.json` and says so.
+fn write_contribution(prefix: &str, songs: &[lengths::SongLength]) -> Result<()> {
+    let file = format!(
+        "{prefix}-{}.json",
+        chrono::Local::now().format("%Y-%m-%d-%H%M%S")
+    );
+    let json = serde_json::to_string_pretty(songs)? + "\n";
+    fs::write(&file, json).with_context(|| format!("cannot write {file}"))?;
+    println!("Wrote {} to {file}", fmt_count(songs.len() as u64, "song"));
+    Ok(())
+}
+
+/// Looks up the songs to check of a contribution file in MusicBrainz, printing
+/// the songs to review as they come and, in a terminal, one status line that
+/// updates in place.
+fn resolve(file: &Path, limit: Option<usize>) -> Result<()> {
+    let mut client =
+        musicbrainz::Client::new(musicbrainz::URL, musicbrainz::DELAY, musicbrainz::BACKOFF);
+    let tty = std::io::stdout().is_terminal();
+    let r = musicbrainz::resolve(file, &mut client, limit, |note, status| {
+        let mut out = std::io::stdout().lock();
+        // Return to the start of the status line and clear it.
+        let clear = if tty { "\r\x1b[K" } else { "" };
+        let end = if tty { "" } else { "\n" };
+        if let Some(note) = note {
+            let _ = writeln!(out, "{clear}{note}");
         }
-        (None, None) => unreachable!("clap requires --spotify or --file"),
-    };
+        let _ = write!(out, "{clear}{status}{end}");
+        let _ = out.flush();
+    })?;
+    if r.found + r.far.len() + r.not_found.len() == 0 {
+        println!("Nothing to resolve: every song to check was already looked up.");
+        return Ok(());
+    }
+    if tty {
+        println!();
+    }
+    println!("\nFound in MusicBrainz: {}", fmt_int(r.found as u64));
+    print_songs(
+        "To check, far from the lengths played",
+        r.far.len(),
+        [],
+        false,
+    );
+    print_songs("Not in MusicBrainz", r.not_found.len(), [], false);
+    if r.left > 0 {
+        println!(
+            "Still to look up: {} (run again to continue)",
+            fmt_int(r.left as u64)
+        );
+    }
+    Ok(())
+}
+
+/// Adds the songs of a contribution file to the song database file, and counts
+/// (with `list`, lists) what it added and skipped.
+fn import(path: &Path, file: &Path, dry_run: bool, list: bool) -> Result<()> {
+    let songs = read_contribution(path)?;
     let r = songdb::import(file, songs, dry_run)?;
 
     let verb = if dry_run { "Would add to" } else { "Added to" };
     let length = |s: &lengths::SongLength| {
-        format!("{} · {}  ({})", s.artist, s.title, lengths::mmss(s.seconds))
+        format!(
+            "{} · {}  ({})",
+            s.artist,
+            s.title,
+            lengths::mmss(s.seconds.unwrap_or(0))
+        )
     };
     print_songs(
         &format!("{verb} {}", file.display()),
@@ -404,6 +477,14 @@ fn import_spotify(from: &ImportFrom, file: &Path, dry_run: bool, list: bool) -> 
         );
     }
     Ok(())
+}
+
+/// Reads a contribution file.
+fn read_contribution(path: &Path) -> Result<Vec<lengths::SongLength>> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    serde_json::from_str(&text)
+        .with_context(|| format!("{} is not a contribution file", path.display()))
 }
 
 /// Prints `heading: <n>` unless `n` is 0, and with `list` one line per song.

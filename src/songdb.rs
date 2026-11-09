@@ -6,7 +6,7 @@
 //! copy is used; with no copy either, YouTube Music plays keep
 //! the estimate. Nothing here fails the run.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -15,9 +15,9 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::lengths::SongLength;
+use crate::lengths::{SongLength, most_common};
 use crate::model::{Play, Source};
-use crate::normalize::track_key;
+use crate::normalize::{clean_title, track_key};
 
 /// Where the database is downloaded from by default.
 pub const DEFAULT_URL: &str = "https://raw.githubusercontent.com/lulivi/mw/main/data/songs.json";
@@ -25,6 +25,8 @@ pub const DEFAULT_URL: &str = "https://raw.githubusercontent.com/lulivi/mw/main/
 const VERSION: u32 = 1;
 /// Song lengths an import accepts, in seconds.
 pub const IMPORT_RANGE: std::ops::RangeInclusive<u64> = 30..=1200;
+/// `check` of a song whose length nobody knows yet.
+pub const NO_LENGTH: &str = "no length";
 /// Most time a download may take before falling back to the cached copy.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -212,36 +214,83 @@ fn save(path: &Path, text: &str) -> Result<()> {
     fs::write(path, text).with_context(|| format!("cannot write {}", path.display()))
 }
 
+/// Finds the song of a play: by video ID (`true`: the play takes the database
+/// names), else by song key.
+fn find<'a>(by_video: &HashMap<&str, &'a Song>, db: &'a Db, p: &Play) -> Option<(&'a Song, bool)> {
+    match p.video_id.as_deref().and_then(|id| by_video.get(id)) {
+        Some(s) => Some((s, true)),
+        None => db
+            .songs
+            .get(&track_key(&p.artist, &p.track))
+            .map(|s| (s, false)),
+    }
+}
+
+/// Video ID -> song.
+fn by_video(db: &Db) -> HashMap<&str, &Song> {
+    db.songs
+        .values()
+        .flat_map(|s| s.video_ids.iter().map(move |id| (id.as_str(), s)))
+        .collect()
+}
+
 /// Gives YouTube Music plays their song length: by video ID (also taking the
 /// database names), else by song key. Others keep the estimate. Returns how many
 /// plays got a song length.
 pub fn apply(plays: &mut [Play], db: &Db) -> usize {
-    let by_video: HashMap<&str, &Song> = db
-        .songs
-        .values()
-        .flat_map(|s| s.video_ids.iter().map(move |id| (id.as_str(), s)))
-        .collect();
+    let by_video = by_video(db);
     let mut matched = 0;
     for p in plays
         .iter_mut()
         .filter(|p| p.source == Source::YouTubeMusic)
     {
-        let song = match p.video_id.as_deref().and_then(|id| by_video.get(id)) {
-            Some(s) => {
-                p.track = s.title.clone();
-                p.artist = s.artist.clone();
-                s
-            }
-            None => match db.songs.get(&track_key(&p.artist, &p.track)) {
-                Some(s) => s,
-                None => continue,
-            },
+        let Some((song, by_id)) = find(&by_video, db, p) else {
+            continue;
         };
+        if by_id {
+            p.track = song.title.clone();
+            p.artist = song.artist.clone();
+        }
         p.ms_played = song.seconds * 1000;
         p.estimated = false;
         matched += 1;
     }
     matched
+}
+
+/// The YouTube Music songs the database doesn't have (found as [`apply`] does),
+/// one per song key, sorted by it: names in their most frequent spelling with
+/// the title cleaned, every video ID, and a `check` asking for the length.
+pub fn missing(plays: &[Play], db: Option<&Db>) -> Vec<SongLength> {
+    let empty = Db::default();
+    let db = db.unwrap_or(&empty);
+    let by_video = by_video(db);
+    let mut by_key: BTreeMap<String, Vec<&Play>> = BTreeMap::new();
+    for p in plays.iter().filter(|p| p.source == Source::YouTubeMusic) {
+        if find(&by_video, db, p).is_none() {
+            by_key
+                .entry(track_key(&p.artist, &p.track))
+                .or_default()
+                .push(p);
+        }
+    }
+    by_key
+        .into_values()
+        .map(|plays| {
+            let (artist, title) =
+                most_common(plays.iter().map(|p| (&p.artist, &p.track))).expect("a song has plays");
+            let video_ids: BTreeSet<&String> =
+                plays.iter().filter_map(|p| p.video_id.as_ref()).collect();
+            SongLength {
+                artist: artist.clone(),
+                title: clean_title(title),
+                video_ids: video_ids.into_iter().cloned().collect(),
+                check: Some(NO_LENGTH.into()),
+                seconds: None,
+                ..Default::default()
+            }
+        })
+        .collect()
 }
 
 /// What [`import`] did.
@@ -259,18 +308,31 @@ pub struct Imported {
     pub to_check: usize,
 }
 
-/// Adds Spotify song lengths to the database file at `path`, with
-/// `source: "spotify"`. Never overwrites a song already there, and skips the
-/// songs that still have a `check`; the file's other songs and fields are kept.
-/// With `dry_run` nothing is written.
+/// Adds the songs of a contribution file to the database file at `path`, with
+/// their `source` (by default `manual` for songs with video IDs, else
+/// `spotify`), `mbid` and `video_ids`. Never changes a song already there, and
+/// skips the songs that still have a `check`; the file's other songs and fields
+/// are kept. Fails, writing nothing, on a song without `check` or length, or
+/// when a video ID would be in two songs. With `dry_run` nothing is written.
 pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Imported> {
     let text =
         fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
-    parse(&text).with_context(|| format!("{} is not a valid song database", path.display()))?;
+    let db =
+        parse(&text).with_context(|| format!("{} is not a valid song database", path.display()))?;
     let mut doc: Value = serde_json::from_str(&text)?;
     let entries = doc["songs"]
         .as_object_mut()
         .context("\"songs\" is not an object")?;
+    // Video ID -> "artist · title" of the song that has it.
+    let mut owners: HashMap<String, String> = db
+        .songs
+        .values()
+        .flat_map(|s| {
+            let name = format!("{} · {}", s.artist, s.title);
+            s.video_ids.iter().map(move |id| (id.clone(), name.clone()))
+        })
+        .collect();
+    let mut conflicts = vec![];
 
     let mut out = Imported::default();
     for s in songs {
@@ -278,6 +340,13 @@ pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Impo
             out.to_check += 1;
             continue;
         }
+        let Some(seconds) = s.seconds else {
+            bail!(
+                "{} · {} has no length: set \"seconds\" or put back a \"check\"",
+                s.artist,
+                s.title
+            );
+        };
         let (artist, title) = (s.artist.trim(), s.title.trim());
         if artist.is_empty() || title.is_empty() {
             out.unnamed += 1;
@@ -286,18 +355,46 @@ pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Impo
         let key = track_key(artist, title);
         if entries.contains_key(&key) {
             out.present += 1;
-        } else if !IMPORT_RANGE.contains(&s.seconds) {
+        } else if !IMPORT_RANGE.contains(&seconds) {
             out.out_of_range.push(s);
         } else {
+            let name = format!("{artist} · {title}");
+            for id in &s.video_ids {
+                match owners.get(id) {
+                    Some(owner) if *owner != name => {
+                        conflicts.push(format!("video ID {id}: {owner} and {name}"))
+                    }
+                    _ => {
+                        owners.insert(id.clone(), name.clone());
+                    }
+                }
+            }
             let mut entry = json!({"artist": artist, "title": title});
             if let Some(album) = s.album.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
                 entry["album"] = album.into();
             }
-            entry["seconds"] = s.seconds.into();
-            entry["source"] = "spotify".into();
+            entry["seconds"] = seconds.into();
+            let source = match (&s.source, s.video_ids.is_empty()) {
+                (Some(source), _) => source.as_str(),
+                (None, true) => "spotify",
+                (None, false) => "manual",
+            };
+            entry["source"] = source.into();
+            if let Some(mbid) = &s.mbid {
+                entry["mbid"] = mbid.as_str().into();
+            }
+            if !s.video_ids.is_empty() {
+                entry["video_ids"] = s.video_ids.clone().into();
+            }
             entries.insert(key, entry);
             out.added.push(s);
         }
+    }
+    if !conflicts.is_empty() {
+        bail!(
+            "a video ID belongs to one song only; fix these and import again:\n  {}",
+            conflicts.join("\n  ")
+        );
     }
     entries.sort_keys();
     if !dry_run && !out.added.is_empty() {
@@ -368,13 +465,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn missing_leaves_out_known_songs() {
+        let db = parse(DB).unwrap();
+        let plays = vec![
+            yt("aaaaaaaaaaa", "Some Label", "Anything"), // known by video ID
+            yt("bbbbbbbbbbb", "Repion", "Brillante"),    // known by key
+            yt("ccccccccccc", "Nobody", "Unknown (Official Video)"),
+            yt("ddddddddddd", "Nobody", "Unknown"),
+            yt("ccccccccccc", "Nobody", "Unknown (Official Video)"),
+        ];
+        let json = serde_json::to_value(missing(&plays, Some(&db))).unwrap();
+        assert_eq!(
+            json,
+            json!([{"artist": "Nobody", "title": "Unknown",
+                "video_ids": ["ccccccccccc", "ddddddddddd"], "check": "no length", "seconds": null}])
+        );
+        assert_eq!(missing(&plays, None).len(), 3);
+    }
+
     fn length(artist: &str, title: &str, seconds: u64) -> SongLength {
         SongLength {
             artist: artist.into(),
             title: title.into(),
             album: Some("Album".into()),
-            seconds,
-            check: None,
+            seconds: Some(seconds),
+            ..Default::default()
         }
     }
 
@@ -415,6 +531,85 @@ mod tests {
         assert_eq!(doc["songs"]["rosalia|despecha"]["mbid"], "x");
         assert_eq!(doc["songs"].as_object().unwrap().len(), 3);
         parse(&fs::read_to_string(&file).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn import_rejects_no_length_without_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("songs.json");
+        save(&file, DB).unwrap();
+        let unknown = SongLength {
+            seconds: None,
+            ..length("A", "Unknown", 0)
+        };
+        let err = import(&file, vec![unknown], false).unwrap_err();
+        assert!(err.to_string().contains("A · Unknown"), "{err}");
+        assert_eq!(fs::read_to_string(&file).unwrap(), DB);
+    }
+
+    #[test]
+    fn import_adds_source_mbid_and_video_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("songs.json");
+        save(&file, DB).unwrap();
+        import(
+            &file,
+            vec![
+                SongLength {
+                    video_ids: vec!["ddddddddddd".into()],
+                    mbid: Some("m".into()),
+                    source: Some("musicbrainz".into()),
+                    ..length("A", "Resolved", 200)
+                },
+                SongLength {
+                    video_ids: vec!["eeeeeeeeeee".into()],
+                    ..length("A", "Typed", 210)
+                },
+            ],
+            false,
+        )
+        .unwrap();
+        let doc: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(
+            doc["songs"]["a|resolved"],
+            json!({"artist": "A", "title": "Resolved", "album": "Album", "seconds": 200,
+                "source": "musicbrainz", "mbid": "m", "video_ids": ["ddddddddddd"]})
+        );
+        assert_eq!(doc["songs"]["a|typed"]["source"], "manual");
+        parse(&fs::read_to_string(&file).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn import_rejects_a_video_id_in_two_songs() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("songs.json");
+        save(&file, DB).unwrap();
+        let with_id = |title, id: &str| SongLength {
+            video_ids: vec![id.into()],
+            ..length("A", title, 200)
+        };
+        for dry_run in [false, true] {
+            let err = import(
+                &file,
+                vec![
+                    with_id("Taken", "aaaaaaaaaaa"), // ROSALÍA · DESPECHÁ has it
+                    with_id("First", "fffffffffff"),
+                    with_id("Second", "fffffffffff"),
+                ],
+                dry_run,
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(
+                err.contains("video ID aaaaaaaaaaa: ROSALÍA · DESPECHÁ and A · Taken"),
+                "{err}"
+            );
+            assert!(
+                err.contains("video ID fffffffffff: A · First and A · Second"),
+                "{err}"
+            );
+            assert_eq!(fs::read_to_string(&file).unwrap(), DB);
+        }
     }
 
     #[test]

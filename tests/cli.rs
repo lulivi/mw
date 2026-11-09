@@ -206,7 +206,7 @@ fn exports_spotify_song_lengths() {
         json,
         serde_json::json!([
             {"artist": "A", "title": "New", "album": "Album", "seconds": 201},
-            {"artist": "A", "title": "Once", "album": "Album", "seconds": 150, "check": "one full play"}
+            {"artist": "A", "title": "Once", "album": "Album", "check": "one full play", "seconds": "2:30"}
         ])
     );
 }
