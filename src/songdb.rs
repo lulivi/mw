@@ -12,7 +12,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
+use serde_json::{Value, json};
 
+use crate::lengths::SongLength;
 use crate::model::{Play, Source};
 use crate::normalize::track_key;
 
@@ -20,6 +22,8 @@ use crate::normalize::track_key;
 pub const DEFAULT_URL: &str = "https://raw.githubusercontent.com/lulivi/mw/main/data/songs.json";
 /// Format version this program reads.
 const VERSION: u32 = 1;
+/// Song lengths an import accepts, in seconds.
+pub const IMPORT_RANGE: std::ops::RangeInclusive<u64> = 30..=1200;
 /// Most time a download may take before falling back to the cached copy.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -184,6 +188,61 @@ pub fn apply(plays: &mut [Play], db: &Db) -> usize {
     matched
 }
 
+/// What [`import`] did.
+#[derive(Debug, Default)]
+pub struct Imported {
+    /// Songs added (or that would be, on a dry run).
+    pub added: Vec<SongLength>,
+    /// Songs whose key the database already had.
+    pub present: usize,
+    /// Songs skipped for a length outside [`IMPORT_RANGE`].
+    pub out_of_range: Vec<SongLength>,
+    /// Songs skipped for an empty artist or title.
+    pub unnamed: usize,
+}
+
+/// Adds Spotify song lengths to the database file at `path`, with
+/// `source: "spotify"`. Never overwrites a song already there; the file's other
+/// songs and fields are kept. With `dry_run` nothing is written.
+pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Imported> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    parse(&text).with_context(|| format!("{} is not a valid song database", path.display()))?;
+    let mut doc: Value = serde_json::from_str(&text)?;
+    let entries = doc["songs"]
+        .as_object_mut()
+        .context("\"songs\" is not an object")?;
+
+    let mut out = Imported::default();
+    for s in songs {
+        let (artist, title) = (s.artist.trim(), s.title.trim());
+        if artist.is_empty() || title.is_empty() {
+            out.unnamed += 1;
+            continue;
+        }
+        let key = track_key(artist, title);
+        if entries.contains_key(&key) {
+            out.present += 1;
+        } else if !IMPORT_RANGE.contains(&s.seconds) {
+            out.out_of_range.push(s);
+        } else {
+            let mut entry = json!({"artist": artist, "title": title});
+            if let Some(album) = s.album.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+                entry["album"] = album.into();
+            }
+            entry["seconds"] = s.seconds.into();
+            entry["source"] = "spotify".into();
+            entries.insert(key, entry);
+            out.added.push(s);
+        }
+    }
+    entries.sort_keys();
+    if !dry_run && !out.added.is_empty() {
+        save(path, &(serde_json::to_string_pretty(&doc)? + "\n"))?;
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +299,59 @@ mod tests {
             got(&plays[2]),
             ("Nobody".into(), "Unknown".into(), 210_000, true)
         );
+    }
+
+    fn length(artist: &str, title: &str, seconds: u64) -> SongLength {
+        SongLength {
+            artist: artist.into(),
+            title: title.into(),
+            album: Some("Album".into()),
+            seconds,
+        }
+    }
+
+    #[test]
+    fn import_adds_new_songs_and_keeps_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("songs.json");
+        save(&file, DB).unwrap();
+        let got = import(
+            &file,
+            vec![
+                length("Repion", "Brillante", 999), // already there: not overwritten
+                length("A", "New", 200),
+                length("A", "Short", 29),
+                length("A", "Long", 1201),
+                length(" ", "No artist", 200),
+            ],
+            false,
+        )
+        .unwrap();
+        assert_eq!(got.added.len(), 1);
+        assert_eq!(got.present, 1);
+        let skipped: Vec<_> = got.out_of_range.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(skipped, ["Short", "Long"]);
+        assert_eq!(got.unnamed, 1);
+
+        let doc: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(
+            doc["songs"]["a|new"],
+            json!({"artist": "A", "title": "New", "album": "Album", "seconds": 200, "source": "spotify"})
+        );
+        assert_eq!(doc["songs"]["repion|brillante"]["seconds"], 200);
+        assert_eq!(doc["songs"]["rosalia|despecha"]["mbid"], "x");
+        assert_eq!(doc["songs"].as_object().unwrap().len(), 3);
+        parse(&fs::read_to_string(&file).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn import_dry_run_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("songs.json");
+        save(&file, DB).unwrap();
+        let got = import(&file, vec![length("A", "New", 200)], true).unwrap();
+        assert_eq!(got.added.len(), 1);
+        assert_eq!(fs::read_to_string(&file).unwrap(), DB);
     }
 
     #[test]

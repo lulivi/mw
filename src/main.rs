@@ -129,6 +129,34 @@ enum DbCommand {
         #[command(flatten)]
         db: DbArgs,
     },
+
+    /// Add Spotify song lengths to the song database file (for the maintainer)
+    #[command(hide = true)]
+    ImportSpotify {
+        #[command(flatten)]
+        from: ImportFrom,
+
+        /// Song database file to add the songs to
+        #[arg(long, value_name = "PATH", default_value = "data/songs.json")]
+        songs: PathBuf,
+
+        /// Only print what would be added
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+/// Where `mw db import-spotify` reads the song lengths from.
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct ImportFrom {
+    /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
+    #[arg(long, value_name = "DIR")]
+    spotify: Option<PathBuf>,
+
+    /// A file written by `mw db export-spotify`
+    #[arg(long, value_name = "PATH")]
+    file: Option<PathBuf>,
 }
 
 /// Values of `--source`: which services count towards the stats.
@@ -183,6 +211,11 @@ fn main() -> Result<()> {
     if let Some(Command::Db(cmd)) = &cli.command {
         return match cmd {
             DbCommand::ExportSpotify { spotify, db } => export_spotify(spotify, db.origin()),
+            DbCommand::ImportSpotify {
+                from,
+                songs,
+                dry_run,
+            } => import_spotify(from, songs, *dry_run),
         };
     }
 
@@ -322,6 +355,62 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
         true,
     );
     print_left_out("Not exported, only one full play", &m.single, false);
+    Ok(())
+}
+
+/// Adds song lengths from a Spotify history or an export file to the song
+/// database file, and reports what it added and skipped.
+fn import_spotify(from: &ImportFrom, file: &Path, dry_run: bool) -> Result<()> {
+    let songs = match (&from.spotify, &from.file) {
+        (Some(dir), _) => {
+            let m = lengths::measure(&sources::spotify::full_plays(dir)?, |_| false);
+            print_left_out(
+                &format!(
+                    "Not measured, full plays differ by more than {} s",
+                    lengths::MAX_SPREAD_MS / 1000
+                ),
+                &m.inconsistent,
+                true,
+            );
+            print_left_out("Not measured, only one full play", &m.single, false);
+            m.songs
+        }
+        (None, Some(path)) => {
+            let text = fs::read_to_string(path)
+                .with_context(|| format!("cannot read {}", path.display()))?;
+            serde_json::from_str(&text)
+                .with_context(|| format!("{} is not an export-spotify file", path.display()))?
+        }
+        (None, None) => unreachable!("clap requires --spotify or --file"),
+    };
+    let r = songdb::import(file, songs, dry_run)?;
+
+    let verb = if dry_run { "Would add" } else { "Added" };
+    println!(
+        "\n{verb} {} to {}",
+        fmt_count(r.added.len() as u64, "song"),
+        file.display()
+    );
+    for s in &r.added {
+        println!("  {} · {}  ({})", s.artist, s.title, mmss(s.seconds * 1000));
+    }
+    println!("{} already present", fmt_count(r.present as u64, "song"));
+    if !r.out_of_range.is_empty() {
+        let (lo, hi) = (songdb::IMPORT_RANGE.start(), songdb::IMPORT_RANGE.end());
+        println!(
+            "Skipped {} with a length outside {lo}–{hi} s:",
+            fmt_count(r.out_of_range.len() as u64, "song")
+        );
+        for s in &r.out_of_range {
+            println!("  {} · {}  ({})", s.artist, s.title, mmss(s.seconds * 1000));
+        }
+    }
+    if r.unnamed > 0 {
+        println!(
+            "Skipped {} without artist or title",
+            fmt_count(r.unnamed as u64, "song")
+        );
+    }
     Ok(())
 }
 
