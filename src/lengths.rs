@@ -10,8 +10,8 @@ use crate::normalize::track_key;
 
 /// Full plays a song needs before its length is trusted.
 const MIN_PLAYS: usize = 2;
-/// Most the full plays of one song may differ (longest − shortest).
-pub const MAX_SPREAD_MS: u64 = 5_000;
+/// How close to the median a full play must be to count as agreeing with it.
+pub const AGREE_MS: u64 = 1_000;
 
 /// One song of an export file: only what the song database needs.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -36,7 +36,7 @@ pub struct LeftOut {
 pub struct Measured {
     /// Songs with a trusted length, sorted by key.
     pub songs: Vec<SongLength>,
-    /// Songs whose full plays differ by more than [`MAX_SPREAD_MS`].
+    /// Songs with fewer than two full plays within [`AGREE_MS`] of the median.
     pub inconsistent: Vec<LeftOut>,
     /// Songs with a single full play.
     pub single: Vec<LeftOut>,
@@ -45,9 +45,9 @@ pub struct Measured {
 }
 
 /// Measures the song length of every song in `full_plays` that `known` (called
-/// with the song key) doesn't have yet: the median of at least two full plays
-/// that agree within [`MAX_SPREAD_MS`]. Names and album are the most frequent
-/// spelling.
+/// with the song key) doesn't have yet: the median of its full plays, when at
+/// least two of them are within [`AGREE_MS`] of it (others may be off by a seek
+/// or a resume). Names and album are the most frequent spelling.
 pub fn measure(full_plays: &[Play], known: impl Fn(&str) -> bool) -> Measured {
     let mut by_key: BTreeMap<String, Vec<&Play>> = BTreeMap::new();
     for p in full_plays {
@@ -69,6 +69,11 @@ pub fn measure(full_plays: &[Play], known: impl Fn(&str) -> bool) -> Measured {
         let mut ms: Vec<u64> = plays.iter().map(|p| p.ms_played).collect();
         ms.sort_unstable();
         let (min_ms, max_ms) = (ms[0], ms[ms.len() - 1]);
+        let twice = twice_median(&ms);
+        let agreeing = ms
+            .iter()
+            .filter(|&&m| (2 * m).abs_diff(twice) <= 2 * AGREE_MS)
+            .count();
         if ms.len() < MIN_PLAYS {
             out.single.push(LeftOut {
                 artist,
@@ -76,7 +81,7 @@ pub fn measure(full_plays: &[Play], known: impl Fn(&str) -> bool) -> Measured {
                 min_ms,
                 max_ms,
             });
-        } else if max_ms - min_ms > MAX_SPREAD_MS {
+        } else if agreeing < MIN_PLAYS {
             out.inconsistent.push(LeftOut {
                 artist,
                 title,
@@ -95,23 +100,22 @@ pub fn measure(full_plays: &[Play], known: impl Fn(&str) -> bool) -> Measured {
                 artist,
                 title,
                 album,
-                seconds: median_seconds(&ms),
+                seconds: (twice + 1000) / 2000,
             });
         }
     }
     out
 }
 
-/// Median of sorted milliseconds (the mean of the two middle ones for an even
-/// count), rounded to the nearest second.
-fn median_seconds(sorted_ms: &[u64]) -> u64 {
+/// Twice the median of sorted milliseconds (the median of an even count is the
+/// mean of the two middle ones), so it stays an integer.
+fn twice_median(sorted_ms: &[u64]) -> u64 {
     let n = sorted_ms.len();
-    let twice = if n % 2 == 1 {
+    if n % 2 == 1 {
         2 * sorted_ms[n / 2]
     } else {
         sorted_ms[n / 2 - 1] + sorted_ms[n / 2]
-    };
-    (twice + 1000) / 2000
+    }
 }
 
 /// The most frequent item; on a tie, the first one seen.
@@ -176,20 +180,35 @@ mod tests {
     }
 
     #[test]
-    fn plays_that_disagree_are_left_out() {
+    fn needs_two_plays_near_the_median() {
         let plays = [
+            // Two versions: no play near the median.
             play("A", "Edit", None, 180_000),
             play("A", "Edit", None, 240_000),
-            play("A", "Close", None, 180_000),
-            play("A", "Close", None, 185_000),
+            // 3 s apart: neither within 1 s of the median.
+            play("A", "Near", None, 180_000),
+            play("A", "Near", None, 183_000),
+            // Two agree; a seek back and a resume are ignored.
+            play("A", "Seeked", None, 238_862),
+            play("A", "Seeked", None, 227_803),
+            play("A", "Seeked", None, 229_137),
+            play("A", "Seeked", None, 229_137),
         ];
         let m = measure(&plays, |_| false);
-        assert_eq!(m.songs.len(), 1);
-        assert_eq!(m.songs[0].title, "Close");
-        assert_eq!(m.inconsistent[0].title, "Edit");
+        let got: Vec<_> = m
+            .songs
+            .iter()
+            .map(|s| (s.title.as_str(), s.seconds))
+            .collect();
+        assert_eq!(got, [("Seeked", 229)]);
+        let left: Vec<_> = m
+            .inconsistent
+            .iter()
+            .map(|s| (s.title.as_str(), s.min_ms, s.max_ms))
+            .collect();
         assert_eq!(
-            (m.inconsistent[0].min_ms, m.inconsistent[0].max_ms),
-            (180_000, 240_000)
+            left,
+            [("Edit", 180_000, 240_000), ("Near", 180_000, 183_000)]
         );
     }
 

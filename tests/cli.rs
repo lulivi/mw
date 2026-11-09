@@ -183,13 +183,14 @@ fn exports_spotify_song_lengths() {
         .arg(&history)
         .arg("--db")
         .arg(&db)
+        .arg("--list")
         .current_dir(dir.path())
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&o.stdout);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     assert!(
-        stdout.contains("only one full play (1):\n  A · Once"),
+        stdout.contains("Not exported, only one full play: 1\n  A · Once"),
         "{stdout}"
     );
 

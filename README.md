@@ -88,7 +88,7 @@ Your Spotify history can fill the song database for YouTube Music listeners, wit
 ./mw db export-spotify --spotify ./my_data/spotify
 ```
 
-It writes `spotify-durations-<date>-<time>.json` with only the artist, title, album and length of each song, leaving out the songs the database already has. A song's length is the median of its full plays (plays that reached the end of the song), and needs at least two of them that differ by 5 seconds or less: songs with a single full play, or whose full plays disagree, are listed instead. It needs the Extended streaming history. Send the file to the maintainer to add it to the database.
+It writes `spotify-durations-<date>-<time>.json` with only the artist, title, album and length of each song, leaving out the songs the database already has. A song's length is the median of its full plays (plays that reached the end of the song), and needs at least two of them within a second of it; the others may be off because you seeked or resumed. Songs with a single full play, or whose full plays don't agree, are listed instead. It needs the Extended streaming history. Send the file to the maintainer to add it to the database.
 
 ## Development
 
