@@ -77,7 +77,7 @@ On Windows use `mw.exe`; after `cargo install`, just `mw`. Run `mw --help` for e
 
 - Spotify plays shorter than 30 seconds don't count (they're skips), same as the official Wrapped. Podcasts and audiobooks are ignored.
 - YouTube Music doesn't record how long you listened to each song, only that you played it. Each play counts `--ytm-avg-minutes` minutes, which is why the total is marked as estimated when YouTube Music is included ("≈" in the terminal, "estimated minutes" in the image).
-- Songs in the [song database](data/README.md) count their song length instead, assuming you listened to the whole song. A play is matched by video ID (then the database names replace the Takeout ones, which carry wording like "Watched" in your account language) or else by artist and title. `mw` downloads the database on every run and keeps a copy in your cache folder: with no connection it uses that copy, and with no copy every play keeps the estimate. `--offline` uses only the copy; `--db <URL|PATH>` reads another database.
+- Songs in the [song database](data/README.md) count their song length instead, assuming you listened to the whole song. A play is matched by video ID (then the database names replace the Takeout ones, which carry wording like "Watched" in your account language) or else by artist and title. `mw` keeps a copy of the database in your cache folder and, on every run, downloads it again only if it changed: with no connection it uses that copy, and with no copy every play keeps the estimate. `--offline` uses only the copy; `--db <URL|PATH>` reads another database.
 - Artists and songs are merged across sources ignoring case, accents and YouTube add-ons like " - Topic" or "(Official Video)".
 
 ## Sharing song lengths

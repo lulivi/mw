@@ -1,8 +1,9 @@
 //! The song database: song lengths, shared in this repository
-//! (`data/songs.json`) and downloaded on every run.
+//! (`data/songs.json`) and checked for changes on every run.
 //!
-//! The latest download is kept in the user's cache folder. When the download
-//! fails the cached copy is used; with no copy either, YouTube Music plays keep
+//! The latest download is kept in the user's cache folder with its ETag, so it
+//! is only downloaded again when it changed. When the download fails the cached
+//! copy is used; with no copy either, YouTube Music plays keep
 //! the estimate. Nothing here fails the run.
 
 use std::collections::{BTreeMap, HashMap};
@@ -91,11 +92,22 @@ pub fn load(origin: Origin, cache: Option<&Path>) -> (Option<Db>, Vec<String>) {
         Origin::Url(url) => Some(url),
         Origin::Offline => None,
     };
+    let existing = cache.filter(|c| c.exists());
+    let cached = existing.and_then(|c| {
+        read(c)
+            .map_err(|e| warnings.push(format!("song database: {e:#}")))
+            .ok()
+    });
     if let Some(url) = url {
-        match download(url) {
-            Ok((db, text)) => {
+        // Only a readable copy may be kept by a 304; otherwise download it in full.
+        let etag = existing
+            .filter(|_| cached.is_some())
+            .and_then(|c| fs::read_to_string(etag_path(c)).ok());
+        match download(url, etag.as_deref()) {
+            Ok(Download::NotModified) => return (cached, warnings),
+            Ok(Download::New { db, text, etag }) => {
                 if let Some(c) = cache
-                    && let Err(e) = save(c, &text)
+                    && let Err(e) = save_with_etag(c, &text, etag.as_deref())
                 {
                     warnings.push(format!("song database: could not save the copy ({e:#})"));
                 }
@@ -104,29 +116,73 @@ pub fn load(origin: Origin, cache: Option<&Path>) -> (Option<Db>, Vec<String>) {
             Err(e) => warnings.push(format!("song database: {e:#}")),
         }
     }
-    match cache.filter(|c| c.exists()) {
-        Some(c) => {
-            let db = read(c).map_err(|e| warnings.push(format!("song database: {e:#}")));
-            (db.ok(), warnings)
-        }
-        None => {
-            warnings.push("song database: no cached copy; YouTube Music keeps the estimate".into());
-            (None, warnings)
-        }
+    if existing.is_none() {
+        warnings.push("song database: no cached copy; YouTube Music keeps the estimate".into());
     }
+    (cached, warnings)
 }
 
-/// Downloads and parses the database, returning it with its text for the cache.
-fn download(url: &str) -> Result<(Db, String)> {
-    let text = ureq::get(url)
+/// What a download got.
+enum Download {
+    /// The server's copy is the cached one (`304 Not Modified`).
+    NotModified,
+    /// A new copy, with its text for the cache and its ETag.
+    New {
+        db: Db,
+        text: String,
+        etag: Option<String>,
+    },
+}
+
+/// Downloads and parses the database. With `etag` (the cached copy's), the
+/// server may answer that the copy is still current.
+fn download(url: &str, etag: Option<&str>) -> Result<Download> {
+    let mut req = ureq::get(url);
+    if let Some(etag) = etag {
+        req = req.header("If-None-Match", etag);
+    }
+    let mut resp = req
         .config()
         .timeout_global(Some(TIMEOUT))
         .build()
         .call()
-        .and_then(|mut r| r.body_mut().read_to_string())
+        .with_context(|| format!("could not download {url}"))?;
+    if resp.status() == 304 {
+        return Ok(Download::NotModified);
+    }
+    let etag = resp
+        .headers()
+        .get("etag")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let text = resp
+        .body_mut()
+        .read_to_string()
         .with_context(|| format!("could not download {url}"))?;
     let db = parse(&text).with_context(|| format!("{url} is not a valid song database"))?;
-    Ok((db, text))
+    Ok(Download::New { db, text, etag })
+}
+
+/// Where the cached copy's ETag is kept: next to it, as `songs.json.etag`.
+fn etag_path(cache: &Path) -> PathBuf {
+    let mut name = cache.as_os_str().to_owned();
+    name.push(".etag");
+    PathBuf::from(name)
+}
+
+/// Saves the cached copy and its ETag (removing a stale one when there is none).
+fn save_with_etag(cache: &Path, text: &str, etag: Option<&str>) -> Result<()> {
+    save(cache, text)?;
+    let path = etag_path(cache);
+    match etag {
+        Some(etag) => {
+            fs::write(&path, etag).with_context(|| format!("cannot write {}", path.display()))?
+        }
+        None => {
+            let _ = fs::remove_file(path);
+        }
+    }
+    Ok(())
 }
 
 /// Reads and parses a database file.
@@ -248,6 +304,10 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use std::collections::HashSet;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn yt(id: &str, artist: &str, track: &str) -> Play {
         Play {
@@ -357,6 +417,68 @@ mod tests {
     #[test]
     fn rejects_other_versions() {
         assert!(parse(r#"{"version": 2, "songs": {}}"#).is_err());
+    }
+
+    /// Serves `body` with ETag `"v1"` on a local port, answering `304` to a
+    /// matching `If-None-Match`. Returns the URL and how many full answers it sent.
+    fn serve(body: &'static str) -> (String, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/songs.json", listener.local_addr().unwrap());
+        let full = Arc::new(AtomicUsize::new(0));
+        let counter = full.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut buf = [0; 4096];
+                let n = stream.read(&mut buf).unwrap();
+                let request = String::from_utf8_lossy(&buf[..n]).to_lowercase();
+                let response = if request.contains("if-none-match: \"v1\"") {
+                    "HTTP/1.1 304 Not Modified\r\nETag: \"v1\"\r\nConnection: close\r\n\r\n"
+                        .to_string()
+                } else {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    format!(
+                        "HTTP/1.1 200 OK\r\nETag: \"v1\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                };
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        (url, full)
+    }
+
+    #[test]
+    fn downloads_only_when_changed() {
+        let (url, full) = serve(DB);
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("mw/songs.json");
+
+        // No copy: downloaded in full and saved with its ETag.
+        let (db, warnings) = load(Origin::Url(&url), Some(&cache));
+        assert_eq!(db.unwrap().songs.len(), 2, "{warnings:?}");
+        assert_eq!(fs::read_to_string(&cache).unwrap(), DB);
+        assert_eq!(fs::read_to_string(etag_path(&cache)).unwrap(), "\"v1\"");
+
+        // Same ETag: 304, the cached copy is used (changed here to tell them apart).
+        save(&cache, r#"{"version": 1, "songs": {}}"#).unwrap();
+        let (db, warnings) = load(Origin::Url(&url), Some(&cache));
+        assert_eq!(db.unwrap().songs.len(), 0, "{warnings:?}");
+        assert_eq!(full.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn unreadable_copy_is_downloaded_again() {
+        let (url, full) = serve(DB);
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("songs.json");
+        save(&cache, "not json").unwrap();
+        fs::write(etag_path(&cache), "\"v1\"").unwrap();
+
+        let (db, _) = load(Origin::Url(&url), Some(&cache));
+        assert_eq!(db.unwrap().songs.len(), 2);
+        assert_eq!(full.load(Ordering::SeqCst), 1);
+        assert_eq!(fs::read_to_string(&cache).unwrap(), DB);
     }
 
     #[test]
