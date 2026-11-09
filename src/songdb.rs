@@ -722,10 +722,19 @@ mod tests {
     }
 
     /// The database in this repository: keys match their song, a video ID
-    /// belongs to one song only, and every length is positive.
+    /// belongs to one song only, every length is positive, and the file is
+    /// laid out as the import commands write it (sorted, pretty-printed).
     #[test]
     fn repo_database_is_valid() {
-        let db = parse(include_str!("../data/songs.json")).unwrap();
+        let text = include_str!("../data/songs.json");
+        let mut doc: serde_json::Value = serde_json::from_str(text).unwrap();
+        doc["songs"].as_object_mut().unwrap().sort_keys();
+        let canonical = serde_json::to_string_pretty(&doc).unwrap() + "\n";
+        assert!(
+            text == canonical,
+            "data/songs.json: run an import to reformat it"
+        );
+        let db = parse(text).unwrap();
         let mut ids = HashSet::new();
         for (key, s) in &db.songs {
             assert_eq!(key, &track_key(&s.artist, &s.title), "{key:?}");
