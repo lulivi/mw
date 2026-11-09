@@ -1,7 +1,7 @@
 # Song database
 
-`songs.json` holds the real length of songs, so YouTube Music plays (whose
-Takeout history has no length) count their real minutes instead of the
+`songs.json` holds song lengths, so YouTube Music plays (whose
+Takeout history has no length) count the whole song instead of the
 `--ytm-avg-minutes` estimate. `mw` downloads it from this repository on every
 run and keeps a copy in its cache folder (`~/.cache/mw/songs.json` on Linux).
 

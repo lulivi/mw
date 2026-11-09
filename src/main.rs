@@ -70,7 +70,7 @@ struct Cli {
     #[arg(long, default_value_t = 3.5)]
     ytm_avg_minutes: f64,
 
-    /// Song database with real YouTube Music lengths: a URL or a local file [default: the one in the mw repository]
+    /// Song database with the song length of YouTube Music plays: a URL or a local file [default: the one in the mw repository]
     #[arg(long, value_name = "URL|PATH", conflicts_with = "offline")]
     db: Option<String>,
 
@@ -233,7 +233,7 @@ fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Pla
     if let Some(db) = db {
         let matched = songdb::apply(&mut loaded.plays, &db);
         eprintln!(
-            "YouTube Music: real length for {} of {} from the song database",
+            "YouTube Music: song length for {} of {} from the song database",
             fmt_int(matched as u64),
             fmt_count(loaded.plays.len() as u64, "play")
         );

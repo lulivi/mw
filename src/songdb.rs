@@ -1,4 +1,4 @@
-//! The song database: real lengths of songs, shared in this repository
+//! The song database: song lengths, shared in this repository
 //! (`data/songs.json`) and downloaded on every run.
 //!
 //! The latest download is kept in the user's cache folder. When the download
@@ -145,9 +145,9 @@ fn save(path: &Path, text: &str) -> Result<()> {
     fs::write(path, text).with_context(|| format!("cannot write {}", path.display()))
 }
 
-/// Gives YouTube Music plays their real length: by video ID (also taking the
+/// Gives YouTube Music plays their song length: by video ID (also taking the
 /// database names), else by song key. Others keep the estimate. Returns how many
-/// plays got a real length.
+/// plays got a song length.
 pub fn apply(plays: &mut [Play], db: &Db) -> usize {
     let by_video: HashMap<&str, &Song> = db
         .songs

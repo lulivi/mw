@@ -149,7 +149,7 @@ fn next_month((y, m): (i32, u32)) -> (i32, u32) {
 
 /// Computes the stats. Returns `None` if no plays are left after filtering.
 ///
-/// Plays with a real length under [`MIN_MS`] are skips and don't count; estimated
+/// Plays measured under [`MIN_MS`] are skips and don't count; estimated
 /// plays always do.
 pub fn compute(plays: &[Play], f: &Filters, top: usize, by: RankBy) -> Option<Stats> {
     let mut total_ms = 0;
