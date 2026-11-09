@@ -130,11 +130,12 @@ enum DbCommand {
         db: DbArgs,
     },
 
-    /// Add Spotify song lengths to the song database file (for the maintainer)
+    /// Add the songs of a contribution file to the song database file (for the maintainer)
     #[command(hide = true)]
-    ImportSpotify {
-        #[command(flatten)]
-        from: ImportFrom,
+    Import {
+        /// A contribution file (written by `mw db export-spotify` or `export-ytm`)
+        #[arg(long, value_name = "PATH")]
+        file: PathBuf,
 
         /// Song database file to add the songs to
         #[arg(long, value_name = "PATH", default_value = "data/songs.json")]
@@ -148,19 +149,6 @@ enum DbCommand {
         #[arg(long)]
         list: bool,
     },
-}
-
-/// Where `mw db import-spotify` reads the song lengths from.
-#[derive(Args)]
-#[group(required = true, multiple = false)]
-struct ImportFrom {
-    /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
-    #[arg(long, value_name = "DIR")]
-    spotify: Option<PathBuf>,
-
-    /// A file written by `mw db export-spotify`
-    #[arg(long, value_name = "PATH")]
-    file: Option<PathBuf>,
 }
 
 /// Values of `--source`: which services count towards the stats.
@@ -215,12 +203,12 @@ fn main() -> Result<()> {
     if let Some(Command::Db(cmd)) = &cli.command {
         return match cmd {
             DbCommand::ExportSpotify { spotify, db } => export_spotify(spotify, db.origin()),
-            DbCommand::ImportSpotify {
-                from,
+            DbCommand::Import {
+                file,
                 songs,
                 dry_run,
                 list,
-            } => import_spotify(from, songs, *dry_run, *list),
+            } => import(file, songs, *dry_run, *list),
         };
     }
 
@@ -363,19 +351,10 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
     Ok(())
 }
 
-/// Adds song lengths from a Spotify history or an export file to the song
-/// database file, and counts (with `list`, lists) what it added and skipped.
-fn import_spotify(from: &ImportFrom, file: &Path, dry_run: bool, list: bool) -> Result<()> {
-    let songs = match (&from.spotify, &from.file) {
-        (Some(dir), _) => lengths::measure(&sources::spotify::full_plays(dir)?, |_| false).songs,
-        (None, Some(path)) => {
-            let text = fs::read_to_string(path)
-                .with_context(|| format!("cannot read {}", path.display()))?;
-            serde_json::from_str(&text)
-                .with_context(|| format!("{} is not an export-spotify file", path.display()))?
-        }
-        (None, None) => unreachable!("clap requires --spotify or --file"),
-    };
+/// Adds the songs of a contribution file to the song database file, and counts
+/// (with `list`, lists) what it added and skipped.
+fn import(path: &Path, file: &Path, dry_run: bool, list: bool) -> Result<()> {
+    let songs = read_contribution(path)?;
     let r = songdb::import(file, songs, dry_run)?;
 
     let verb = if dry_run { "Would add to" } else { "Added to" };
@@ -409,6 +388,14 @@ fn import_spotify(from: &ImportFrom, file: &Path, dry_run: bool, list: bool) -> 
         );
     }
     Ok(())
+}
+
+/// Reads a contribution file.
+fn read_contribution(path: &Path) -> Result<Vec<lengths::SongLength>> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    serde_json::from_str(&text)
+        .with_context(|| format!("{} is not a contribution file", path.display()))
 }
 
 /// Prints `heading: <n>` unless `n` is 0, and with `list` one line per song.

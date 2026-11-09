@@ -259,18 +259,31 @@ pub struct Imported {
     pub to_check: usize,
 }
 
-/// Adds Spotify song lengths to the database file at `path`, with
-/// `source: "spotify"`. Never overwrites a song already there, and skips the
-/// songs that still have a `check`; the file's other songs and fields are kept.
-/// With `dry_run` nothing is written.
+/// Adds the songs of a contribution file to the database file at `path`, with
+/// their `source` (by default `manual` for songs with video IDs, else
+/// `spotify`), `mbid` and `video_ids`. Never changes a song already there, and
+/// skips the songs that still have a `check`; the file's other songs and fields
+/// are kept. Fails, writing nothing, on a song without `check` or length, or
+/// when a video ID would be in two songs. With `dry_run` nothing is written.
 pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Imported> {
     let text =
         fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
-    parse(&text).with_context(|| format!("{} is not a valid song database", path.display()))?;
+    let db =
+        parse(&text).with_context(|| format!("{} is not a valid song database", path.display()))?;
     let mut doc: Value = serde_json::from_str(&text)?;
     let entries = doc["songs"]
         .as_object_mut()
         .context("\"songs\" is not an object")?;
+    // Video ID -> "artist · title" of the song that has it.
+    let mut owners: HashMap<String, String> = db
+        .songs
+        .values()
+        .flat_map(|s| {
+            let name = format!("{} · {}", s.artist, s.title);
+            s.video_ids.iter().map(move |id| (id.clone(), name.clone()))
+        })
+        .collect();
+    let mut conflicts = vec![];
 
     let mut out = Imported::default();
     for s in songs {
@@ -296,15 +309,43 @@ pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Impo
         } else if !IMPORT_RANGE.contains(&seconds) {
             out.out_of_range.push(s);
         } else {
+            let name = format!("{artist} · {title}");
+            for id in &s.video_ids {
+                match owners.get(id) {
+                    Some(owner) if *owner != name => {
+                        conflicts.push(format!("video ID {id}: {owner} and {name}"))
+                    }
+                    _ => {
+                        owners.insert(id.clone(), name.clone());
+                    }
+                }
+            }
             let mut entry = json!({"artist": artist, "title": title});
             if let Some(album) = s.album.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
                 entry["album"] = album.into();
             }
             entry["seconds"] = seconds.into();
-            entry["source"] = "spotify".into();
+            let source = match (&s.source, s.video_ids.is_empty()) {
+                (Some(source), _) => source.as_str(),
+                (None, true) => "spotify",
+                (None, false) => "manual",
+            };
+            entry["source"] = source.into();
+            if let Some(mbid) = &s.mbid {
+                entry["mbid"] = mbid.as_str().into();
+            }
+            if !s.video_ids.is_empty() {
+                entry["video_ids"] = s.video_ids.clone().into();
+            }
             entries.insert(key, entry);
             out.added.push(s);
         }
+    }
+    if !conflicts.is_empty() {
+        bail!(
+            "a video ID belongs to one song only; fix these and import again:\n  {}",
+            conflicts.join("\n  ")
+        );
     }
     entries.sort_keys();
     if !dry_run && !out.added.is_empty() {
@@ -436,6 +477,71 @@ mod tests {
         let err = import(&file, vec![unknown], false).unwrap_err();
         assert!(err.to_string().contains("A · Unknown"), "{err}");
         assert_eq!(fs::read_to_string(&file).unwrap(), DB);
+    }
+
+    #[test]
+    fn import_adds_source_mbid_and_video_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("songs.json");
+        save(&file, DB).unwrap();
+        import(
+            &file,
+            vec![
+                SongLength {
+                    video_ids: vec!["ddddddddddd".into()],
+                    mbid: Some("m".into()),
+                    source: Some("musicbrainz".into()),
+                    ..length("A", "Resolved", 200)
+                },
+                SongLength {
+                    video_ids: vec!["eeeeeeeeeee".into()],
+                    ..length("A", "Typed", 210)
+                },
+            ],
+            false,
+        )
+        .unwrap();
+        let doc: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(
+            doc["songs"]["a|resolved"],
+            json!({"artist": "A", "title": "Resolved", "album": "Album", "seconds": 200,
+                "source": "musicbrainz", "mbid": "m", "video_ids": ["ddddddddddd"]})
+        );
+        assert_eq!(doc["songs"]["a|typed"]["source"], "manual");
+        parse(&fs::read_to_string(&file).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn import_rejects_a_video_id_in_two_songs() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("songs.json");
+        save(&file, DB).unwrap();
+        let with_id = |title, id: &str| SongLength {
+            video_ids: vec![id.into()],
+            ..length("A", title, 200)
+        };
+        for dry_run in [false, true] {
+            let err = import(
+                &file,
+                vec![
+                    with_id("Taken", "aaaaaaaaaaa"), // ROSALÍA · DESPECHÁ has it
+                    with_id("First", "fffffffffff"),
+                    with_id("Second", "fffffffffff"),
+                ],
+                dry_run,
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(
+                err.contains("video ID aaaaaaaaaaa: ROSALÍA · DESPECHÁ and A · Taken"),
+                "{err}"
+            );
+            assert!(
+                err.contains("video ID fffffffffff: A · First and A · Second"),
+                "{err}"
+            );
+            assert_eq!(fs::read_to_string(&file).unwrap(), DB);
+        }
     }
 
     #[test]
