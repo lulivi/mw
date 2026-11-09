@@ -183,14 +183,13 @@ fn exports_spotify_song_lengths() {
         .arg(&history)
         .arg("--db")
         .arg(&db)
-        .arg("--list")
         .current_dir(dir.path())
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&o.stdout);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     assert!(
-        stdout.contains("Not exported, only one full play: 1\n  A · Once"),
+        stdout.contains("to check, only one full play: 1"),
         "{stdout}"
     );
 
@@ -205,6 +204,9 @@ fn exports_spotify_song_lengths() {
     let json: serde_json::Value = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
     assert_eq!(
         json,
-        serde_json::json!([{"artist": "A", "title": "New", "album": "Album", "seconds": 201}])
+        serde_json::json!([
+            {"artist": "A", "title": "New", "album": "Album", "seconds": 201},
+            {"artist": "A", "title": "Once", "album": "Album", "seconds": 150, "check": "one full play"}
+        ])
     );
 }

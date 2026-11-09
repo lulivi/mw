@@ -255,11 +255,14 @@ pub struct Imported {
     pub out_of_range: Vec<SongLength>,
     /// Songs skipped for an empty artist or title.
     pub unnamed: usize,
+    /// Songs skipped because they still have a `check`.
+    pub to_check: usize,
 }
 
 /// Adds Spotify song lengths to the database file at `path`, with
-/// `source: "spotify"`. Never overwrites a song already there; the file's other
-/// songs and fields are kept. With `dry_run` nothing is written.
+/// `source: "spotify"`. Never overwrites a song already there, and skips the
+/// songs that still have a `check`; the file's other songs and fields are kept.
+/// With `dry_run` nothing is written.
 pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Imported> {
     let text =
         fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
@@ -271,6 +274,10 @@ pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Impo
 
     let mut out = Imported::default();
     for s in songs {
+        if s.check.is_some() {
+            out.to_check += 1;
+            continue;
+        }
         let (artist, title) = (s.artist.trim(), s.title.trim());
         if artist.is_empty() || title.is_empty() {
             out.unnamed += 1;
@@ -367,6 +374,7 @@ mod tests {
             title: title.into(),
             album: Some("Album".into()),
             seconds,
+            check: None,
         }
     }
 
@@ -383,6 +391,10 @@ mod tests {
                 length("A", "Short", 29),
                 length("A", "Long", 1201),
                 length(" ", "No artist", 200),
+                SongLength {
+                    check: Some("one full play".into()),
+                    ..length("A", "Unchecked", 200)
+                },
             ],
             false,
         )
@@ -392,6 +404,7 @@ mod tests {
         let skipped: Vec<_> = got.out_of_range.iter().map(|s| s.title.as_str()).collect();
         assert_eq!(skipped, ["Short", "Long"]);
         assert_eq!(got.unnamed, 1);
+        assert_eq!(got.to_check, 1);
 
         let doc: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(

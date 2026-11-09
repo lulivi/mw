@@ -128,10 +128,6 @@ enum DbCommand {
 
         #[command(flatten)]
         db: DbArgs,
-
-        /// Also list the songs left out, not only how many
-        #[arg(long)]
-        list: bool,
     },
 
     /// Add Spotify song lengths to the song database file (for the maintainer)
@@ -148,7 +144,7 @@ enum DbCommand {
         #[arg(long)]
         dry_run: bool,
 
-        /// Also list the songs, not only how many
+        /// Also list the songs added and skipped, not only how many
         #[arg(long)]
         list: bool,
     },
@@ -218,9 +214,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     if let Some(Command::Db(cmd)) = &cli.command {
         return match cmd {
-            DbCommand::ExportSpotify { spotify, db, list } => {
-                export_spotify(spotify, db.origin(), *list)
-            }
+            DbCommand::ExportSpotify { spotify, db } => export_spotify(spotify, db.origin()),
             DbCommand::ImportSpotify {
                 from,
                 songs,
@@ -330,9 +324,9 @@ fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Pla
 }
 
 /// Writes the song lengths of the Spotify full plays that the song database
-/// doesn't have to `spotify-durations-<local date and time>.json`, and counts
-/// (with `list`, lists) the songs left out.
-fn export_spotify(dir: &Path, origin: songdb::Origin, list: bool) -> Result<()> {
+/// doesn't have to `spotify-durations-<local date and time>.json`, the unverified
+/// ones with a `check`.
+fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
     let plays = sources::spotify::full_plays(dir)?;
     let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
     for w in &warnings {
@@ -353,8 +347,19 @@ fn export_spotify(dir: &Path, origin: songdb::Origin, list: bool) -> Result<()> 
         "Wrote {} to {file}",
         fmt_count(m.songs.len() as u64, "song")
     );
+    print_songs("  to check, only one full play", m.single, [], false);
+    print_songs(
+        "  to check, full plays don't agree on a length",
+        m.inconsistent,
+        [],
+        false,
+    );
     print_songs("Already in the song database", m.known, [], false);
-    print_left_out("Not exported", &m, list);
+    if m.single + m.inconsistent > 0 {
+        println!(
+            "Songs to check have a \"check\" field: fix \"seconds\" if needed (seconds or \"m:ss\") and remove \"check\" to import them."
+        );
+    }
     Ok(())
 }
 
@@ -362,11 +367,7 @@ fn export_spotify(dir: &Path, origin: songdb::Origin, list: bool) -> Result<()> 
 /// database file, and counts (with `list`, lists) what it added and skipped.
 fn import_spotify(from: &ImportFrom, file: &Path, dry_run: bool, list: bool) -> Result<()> {
     let songs = match (&from.spotify, &from.file) {
-        (Some(dir), _) => {
-            let m = lengths::measure(&sources::spotify::full_plays(dir)?, |_| false);
-            print_left_out("Not measured", &m, list);
-            m.songs
-        }
+        (Some(dir), _) => lengths::measure(&sources::spotify::full_plays(dir)?, |_| false).songs,
         (None, Some(path)) => {
             let text = fs::read_to_string(path)
                 .with_context(|| format!("cannot read {}", path.display()))?;
@@ -379,7 +380,7 @@ fn import_spotify(from: &ImportFrom, file: &Path, dry_run: bool, list: bool) -> 
 
     let verb = if dry_run { "Would add to" } else { "Added to" };
     let length = |s: &lengths::SongLength| {
-        format!("{} · {}  ({})", s.artist, s.title, mmss(s.seconds * 1000))
+        format!("{} · {}  ({})", s.artist, s.title, lengths::mmss(s.seconds))
     };
     print_songs(
         &format!("{verb} {}", file.display()),
@@ -396,28 +397,13 @@ fn import_spotify(from: &ImportFrom, file: &Path, dry_run: bool, list: bool) -> 
         list,
     );
     print_songs("Skipped, no artist or title", r.unnamed, [], false);
+    if r.to_check > 0 {
+        eprintln!(
+            "warning: skipped {} still marked \"check\"",
+            fmt_count(r.to_check as u64, "song")
+        );
+    }
     Ok(())
-}
-
-/// Prints how many songs [`lengths::measure`] left out, and with `list` which.
-fn print_left_out(prefix: &str, m: &lengths::Measured, list: bool) {
-    print_songs(
-        &format!("{prefix}, full plays don't agree on a length"),
-        m.inconsistent.len(),
-        m.inconsistent.iter().map(|s| {
-            let range = format!("{}–{}", mmss(s.min_ms), mmss(s.max_ms));
-            format!("{} · {}  ({range})", s.artist, s.title)
-        }),
-        list,
-    );
-    print_songs(
-        &format!("{prefix}, only one full play"),
-        m.single.len(),
-        m.single
-            .iter()
-            .map(|s| format!("{} · {}", s.artist, s.title)),
-        list,
-    );
 }
 
 /// Prints `heading: <n>` unless `n` is 0, and with `list` one line per song.
@@ -431,12 +417,6 @@ fn print_songs(heading: &str, n: usize, lines: impl IntoIterator<Item = String>,
             println!("  {line}");
         }
     }
-}
-
-/// Milliseconds as `m:ss`.
-fn mmss(ms: u64) -> String {
-    let s = (ms + 500) / 1000;
-    format!("{}:{:02}", s / 60, s % 60)
 }
 
 /// Is this source included? `None` means all sources.

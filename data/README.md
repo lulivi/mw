@@ -50,7 +50,9 @@ mw db import-spotify --file spotify-durations-<date>-<time>.json
 
 `--spotify <DIR>` reads a Spotify history directly instead. The songs are added
 with `source: "spotify"`; a song already in the database is never overwritten,
-and lengths outside 30–1200 s are skipped and listed. `--songs <PATH>` writes
+and lengths outside 30–1200 s are skipped (`--list` lists them). Songs that
+still have a `"check"` field are skipped too: to add one, check its length in
+Spotify, fix `"seconds"` if needed (`229` or `"3:49"`) and remove `"check"`. `--songs <PATH>` writes
 another file than `data/songs.json`.
 
 Bump `version` only for changes older `mw` releases can't read: they ignore the
