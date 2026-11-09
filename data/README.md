@@ -1,9 +1,10 @@
 # Song database
 
-`songs.json` holds the real length of songs, so YouTube Music plays (whose
-Takeout history has no length) count their real minutes instead of the
-`--ytm-avg-minutes` estimate. `mw` downloads it from this repository on every
-run and keeps a copy in its cache folder (`~/.cache/mw/songs.json` on Linux).
+`songs.json` holds song lengths, so YouTube Music plays (whose
+Takeout history has no length) count the whole song instead of the
+`--ytm-avg-minutes` estimate. `mw` keeps a copy in its cache folder
+(`~/.cache/mw/songs.json` on Linux, with its ETag in `songs.json.etag`) and on
+every run asks this repository for it, downloading it only when it changed.
 
 ## Format
 
@@ -14,6 +15,7 @@ run and keeps a copy in its cache folder (`~/.cache/mw/songs.json` on Linux).
     "rosalia|despecha": {
       "artist": "ROSALÍA",
       "title": "DESPECHÁ",
+      "album": "MOTOMAMI",
       "seconds": 157,
       "source": "musicbrainz",
       "mbid": "<MusicBrainz recording ID>",
@@ -25,6 +27,7 @@ run and keeps a copy in its cache folder (`~/.cache/mw/songs.json` on Linux).
 
 - The key is `normalize::track_key(artist, title)`: the artist key and the
   cleaned title, joined by `|` (the artist key has only letters and digits, so the first `|` always ends it).
+- `album` (optional): an album the song is on. Not part of the key.
 - `seconds`: length of the song, greater than 0.
 - `source`: where the length comes from: `musicbrainz`, `spotify` or `manual`.
 - `mbid` (optional): MusicBrainz recording ID.
@@ -34,6 +37,23 @@ run and keeps a copy in its cache folder (`~/.cache/mw/songs.json` on Linux).
 A play is matched by video ID first, then by key; otherwise it keeps the
 estimate. `cargo test` checks that every key matches its song, that no video ID
 is in two songs and that every length is positive.
+
+## Adding Spotify song lengths
+
+Listeners send the file written by `mw db export-spotify` (see the main
+README). Add it with:
+
+```bash
+mw db import-spotify --file spotify-durations-<date>-<time>.json --dry-run  # check first
+mw db import-spotify --file spotify-durations-<date>-<time>.json
+```
+
+`--spotify <DIR>` reads a Spotify history directly instead. The songs are added
+with `source: "spotify"`; a song already in the database is never overwritten,
+and lengths outside 30–1200 s are skipped (`--list` lists them). Songs that
+still have a `"check"` field are skipped too: to add one, check its length in
+Spotify, fix `"seconds"` if needed (`229` or `"3:49"`) and remove `"check"`. `--songs <PATH>` writes
+another file than `data/songs.json`.
 
 Bump `version` only for changes older `mw` releases can't read: they ignore the
 database and keep the estimates.

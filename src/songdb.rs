@@ -1,8 +1,9 @@
-//! The song database: real lengths of songs, shared in this repository
-//! (`data/songs.json`) and downloaded on every run.
+//! The song database: song lengths, shared in this repository
+//! (`data/songs.json`) and checked for changes on every run.
 //!
-//! The latest download is kept in the user's cache folder. When the download
-//! fails the cached copy is used; with no copy either, YouTube Music plays keep
+//! The latest download is kept in the user's cache folder with its ETag, so it
+//! is only downloaded again when it changed. When the download fails the cached
+//! copy is used; with no copy either, YouTube Music plays keep
 //! the estimate. Nothing here fails the run.
 
 use std::collections::{BTreeMap, HashMap};
@@ -12,7 +13,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
+use serde_json::{Value, json};
 
+use crate::lengths::SongLength;
 use crate::model::{Play, Source};
 use crate::normalize::track_key;
 
@@ -20,6 +23,8 @@ use crate::normalize::track_key;
 pub const DEFAULT_URL: &str = "https://raw.githubusercontent.com/lulivi/mw/main/data/songs.json";
 /// Format version this program reads.
 const VERSION: u32 = 1;
+/// Song lengths an import accepts, in seconds.
+pub const IMPORT_RANGE: std::ops::RangeInclusive<u64> = 30..=1200;
 /// Most time a download may take before falling back to the cached copy.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -29,6 +34,13 @@ pub struct Db {
     version: u32,
     /// Song key ([`track_key`]) -> song.
     songs: BTreeMap<String, Song>,
+}
+
+impl Db {
+    /// Whether the database has the song with this key ([`track_key`]).
+    pub fn contains(&self, key: &str) -> bool {
+        self.songs.contains_key(key)
+    }
 }
 
 /// One song in the database.
@@ -80,11 +92,22 @@ pub fn load(origin: Origin, cache: Option<&Path>) -> (Option<Db>, Vec<String>) {
         Origin::Url(url) => Some(url),
         Origin::Offline => None,
     };
+    let existing = cache.filter(|c| c.exists());
+    let cached = existing.and_then(|c| {
+        read(c)
+            .map_err(|e| warnings.push(format!("song database: {e:#}")))
+            .ok()
+    });
     if let Some(url) = url {
-        match download(url) {
-            Ok((db, text)) => {
+        // Only a readable copy may be kept by a 304; otherwise download it in full.
+        let etag = existing
+            .filter(|_| cached.is_some())
+            .and_then(|c| fs::read_to_string(etag_path(c)).ok());
+        match download(url, etag.as_deref()) {
+            Ok(Download::NotModified) => return (cached, warnings),
+            Ok(Download::New { db, text, etag }) => {
                 if let Some(c) = cache
-                    && let Err(e) = save(c, &text)
+                    && let Err(e) = save_with_etag(c, &text, etag.as_deref())
                 {
                     warnings.push(format!("song database: could not save the copy ({e:#})"));
                 }
@@ -93,29 +116,73 @@ pub fn load(origin: Origin, cache: Option<&Path>) -> (Option<Db>, Vec<String>) {
             Err(e) => warnings.push(format!("song database: {e:#}")),
         }
     }
-    match cache.filter(|c| c.exists()) {
-        Some(c) => {
-            let db = read(c).map_err(|e| warnings.push(format!("song database: {e:#}")));
-            (db.ok(), warnings)
-        }
-        None => {
-            warnings.push("song database: no cached copy; YouTube Music keeps the estimate".into());
-            (None, warnings)
-        }
+    if existing.is_none() {
+        warnings.push("song database: no cached copy; YouTube Music keeps the estimate".into());
     }
+    (cached, warnings)
 }
 
-/// Downloads and parses the database, returning it with its text for the cache.
-fn download(url: &str) -> Result<(Db, String)> {
-    let text = ureq::get(url)
+/// What a download got.
+enum Download {
+    /// The server's copy is the cached one (`304 Not Modified`).
+    NotModified,
+    /// A new copy, with its text for the cache and its ETag.
+    New {
+        db: Db,
+        text: String,
+        etag: Option<String>,
+    },
+}
+
+/// Downloads and parses the database. With `etag` (the cached copy's), the
+/// server may answer that the copy is still current.
+fn download(url: &str, etag: Option<&str>) -> Result<Download> {
+    let mut req = ureq::get(url);
+    if let Some(etag) = etag {
+        req = req.header("If-None-Match", etag);
+    }
+    let mut resp = req
         .config()
         .timeout_global(Some(TIMEOUT))
         .build()
         .call()
-        .and_then(|mut r| r.body_mut().read_to_string())
+        .with_context(|| format!("could not download {url}"))?;
+    if resp.status() == 304 {
+        return Ok(Download::NotModified);
+    }
+    let etag = resp
+        .headers()
+        .get("etag")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let text = resp
+        .body_mut()
+        .read_to_string()
         .with_context(|| format!("could not download {url}"))?;
     let db = parse(&text).with_context(|| format!("{url} is not a valid song database"))?;
-    Ok((db, text))
+    Ok(Download::New { db, text, etag })
+}
+
+/// Where the cached copy's ETag is kept: next to it, as `songs.json.etag`.
+fn etag_path(cache: &Path) -> PathBuf {
+    let mut name = cache.as_os_str().to_owned();
+    name.push(".etag");
+    PathBuf::from(name)
+}
+
+/// Saves the cached copy and its ETag (removing a stale one when there is none).
+fn save_with_etag(cache: &Path, text: &str, etag: Option<&str>) -> Result<()> {
+    save(cache, text)?;
+    let path = etag_path(cache);
+    match etag {
+        Some(etag) => {
+            fs::write(&path, etag).with_context(|| format!("cannot write {}", path.display()))?
+        }
+        None => {
+            let _ = fs::remove_file(path);
+        }
+    }
+    Ok(())
 }
 
 /// Reads and parses a database file.
@@ -145,9 +212,9 @@ fn save(path: &Path, text: &str) -> Result<()> {
     fs::write(path, text).with_context(|| format!("cannot write {}", path.display()))
 }
 
-/// Gives YouTube Music plays their real length: by video ID (also taking the
+/// Gives YouTube Music plays their song length: by video ID (also taking the
 /// database names), else by song key. Others keep the estimate. Returns how many
-/// plays got a real length.
+/// plays got a song length.
 pub fn apply(plays: &mut [Play], db: &Db) -> usize {
     let by_video: HashMap<&str, &Song> = db
         .songs
@@ -177,11 +244,77 @@ pub fn apply(plays: &mut [Play], db: &Db) -> usize {
     matched
 }
 
+/// What [`import`] did.
+#[derive(Debug, Default)]
+pub struct Imported {
+    /// Songs added (or that would be, on a dry run).
+    pub added: Vec<SongLength>,
+    /// Songs whose key the database already had.
+    pub present: usize,
+    /// Songs skipped for a length outside [`IMPORT_RANGE`].
+    pub out_of_range: Vec<SongLength>,
+    /// Songs skipped for an empty artist or title.
+    pub unnamed: usize,
+    /// Songs skipped because they still have a `check`.
+    pub to_check: usize,
+}
+
+/// Adds Spotify song lengths to the database file at `path`, with
+/// `source: "spotify"`. Never overwrites a song already there, and skips the
+/// songs that still have a `check`; the file's other songs and fields are kept.
+/// With `dry_run` nothing is written.
+pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Imported> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    parse(&text).with_context(|| format!("{} is not a valid song database", path.display()))?;
+    let mut doc: Value = serde_json::from_str(&text)?;
+    let entries = doc["songs"]
+        .as_object_mut()
+        .context("\"songs\" is not an object")?;
+
+    let mut out = Imported::default();
+    for s in songs {
+        if s.check.is_some() {
+            out.to_check += 1;
+            continue;
+        }
+        let (artist, title) = (s.artist.trim(), s.title.trim());
+        if artist.is_empty() || title.is_empty() {
+            out.unnamed += 1;
+            continue;
+        }
+        let key = track_key(artist, title);
+        if entries.contains_key(&key) {
+            out.present += 1;
+        } else if !IMPORT_RANGE.contains(&s.seconds) {
+            out.out_of_range.push(s);
+        } else {
+            let mut entry = json!({"artist": artist, "title": title});
+            if let Some(album) = s.album.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+                entry["album"] = album.into();
+            }
+            entry["seconds"] = s.seconds.into();
+            entry["source"] = "spotify".into();
+            entries.insert(key, entry);
+            out.added.push(s);
+        }
+    }
+    entries.sort_keys();
+    if !dry_run && !out.added.is_empty() {
+        save(path, &(serde_json::to_string_pretty(&doc)? + "\n"))?;
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
     use std::collections::HashSet;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn yt(id: &str, artist: &str, track: &str) -> Play {
         Play {
@@ -235,9 +368,130 @@ mod tests {
         );
     }
 
+    fn length(artist: &str, title: &str, seconds: u64) -> SongLength {
+        SongLength {
+            artist: artist.into(),
+            title: title.into(),
+            album: Some("Album".into()),
+            seconds,
+            check: None,
+        }
+    }
+
+    #[test]
+    fn import_adds_new_songs_and_keeps_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("songs.json");
+        save(&file, DB).unwrap();
+        let got = import(
+            &file,
+            vec![
+                length("Repion", "Brillante", 999), // already there: not overwritten
+                length("A", "New", 200),
+                length("A", "Short", 29),
+                length("A", "Long", 1201),
+                length(" ", "No artist", 200),
+                SongLength {
+                    check: Some("one full play".into()),
+                    ..length("A", "Unchecked", 200)
+                },
+            ],
+            false,
+        )
+        .unwrap();
+        assert_eq!(got.added.len(), 1);
+        assert_eq!(got.present, 1);
+        let skipped: Vec<_> = got.out_of_range.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(skipped, ["Short", "Long"]);
+        assert_eq!(got.unnamed, 1);
+        assert_eq!(got.to_check, 1);
+
+        let doc: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(
+            doc["songs"]["a|new"],
+            json!({"artist": "A", "title": "New", "album": "Album", "seconds": 200, "source": "spotify"})
+        );
+        assert_eq!(doc["songs"]["repion|brillante"]["seconds"], 200);
+        assert_eq!(doc["songs"]["rosalia|despecha"]["mbid"], "x");
+        assert_eq!(doc["songs"].as_object().unwrap().len(), 3);
+        parse(&fs::read_to_string(&file).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn import_dry_run_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("songs.json");
+        save(&file, DB).unwrap();
+        let got = import(&file, vec![length("A", "New", 200)], true).unwrap();
+        assert_eq!(got.added.len(), 1);
+        assert_eq!(fs::read_to_string(&file).unwrap(), DB);
+    }
+
     #[test]
     fn rejects_other_versions() {
         assert!(parse(r#"{"version": 2, "songs": {}}"#).is_err());
+    }
+
+    /// Serves `body` with ETag `"v1"` on a local port, answering `304` to a
+    /// matching `If-None-Match`. Returns the URL and how many full answers it sent.
+    fn serve(body: &'static str) -> (String, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/songs.json", listener.local_addr().unwrap());
+        let full = Arc::new(AtomicUsize::new(0));
+        let counter = full.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut buf = [0; 4096];
+                let n = stream.read(&mut buf).unwrap();
+                let request = String::from_utf8_lossy(&buf[..n]).to_lowercase();
+                let response = if request.contains("if-none-match: \"v1\"") {
+                    "HTTP/1.1 304 Not Modified\r\nETag: \"v1\"\r\nConnection: close\r\n\r\n"
+                        .to_string()
+                } else {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    format!(
+                        "HTTP/1.1 200 OK\r\nETag: \"v1\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                };
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        (url, full)
+    }
+
+    #[test]
+    fn downloads_only_when_changed() {
+        let (url, full) = serve(DB);
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("mw/songs.json");
+
+        // No copy: downloaded in full and saved with its ETag.
+        let (db, warnings) = load(Origin::Url(&url), Some(&cache));
+        assert_eq!(db.unwrap().songs.len(), 2, "{warnings:?}");
+        assert_eq!(fs::read_to_string(&cache).unwrap(), DB);
+        assert_eq!(fs::read_to_string(etag_path(&cache)).unwrap(), "\"v1\"");
+
+        // Same ETag: 304, the cached copy is used (changed here to tell them apart).
+        save(&cache, r#"{"version": 1, "songs": {}}"#).unwrap();
+        let (db, warnings) = load(Origin::Url(&url), Some(&cache));
+        assert_eq!(db.unwrap().songs.len(), 0, "{warnings:?}");
+        assert_eq!(full.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn unreadable_copy_is_downloaded_again() {
+        let (url, full) = serve(DB);
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("songs.json");
+        save(&cache, "not json").unwrap();
+        fs::write(etag_path(&cache), "\"v1\"").unwrap();
+
+        let (db, _) = load(Origin::Url(&url), Some(&cache));
+        assert_eq!(db.unwrap().songs.len(), 2);
+        assert_eq!(full.load(Ordering::SeqCst), 1);
+        assert_eq!(fs::read_to_string(&cache).unwrap(), DB);
     }
 
     #[test]

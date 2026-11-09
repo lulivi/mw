@@ -4,6 +4,7 @@
 //! This is the command line entry point: it parses the arguments, loads the
 //! selected sources, computes the stats, prints them and saves the image.
 
+mod lengths;
 mod model;
 mod normalize;
 mod render;
@@ -11,12 +12,13 @@ mod songdb;
 mod sources;
 mod stats;
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 use chrono_tz::Tz;
-use clap::{Parser, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use model::{Play, Source};
 use render::{fmt_count, fmt_int, minutes, range_label};
@@ -24,8 +26,11 @@ use stats::{Filters, RankBy, Stats};
 
 /// Music Wrapped: your listening recap from your Spotify and YouTube Music data exports.
 #[derive(Parser)]
-#[command(name = "mw", version)]
+#[command(name = "mw", version, args_conflicts_with_subcommands = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
     #[arg(long, value_name = "DIR")]
     spotify: Option<PathBuf>,
@@ -70,13 +75,8 @@ struct Cli {
     #[arg(long, default_value_t = 3.5)]
     ytm_avg_minutes: f64,
 
-    /// Song database with real YouTube Music lengths: a URL or a local file [default: the one in the mw repository]
-    #[arg(long, value_name = "URL|PATH", conflicts_with = "offline")]
-    db: Option<String>,
-
-    /// Use the cached copy of the song database instead of downloading it
-    #[arg(long)]
-    offline: bool,
+    #[command(flatten)]
+    db: DbArgs,
 
     /// Output PNG
     #[arg(long, value_name = "FILE", default_value = "wrapped.png")]
@@ -89,6 +89,78 @@ struct Cli {
     /// Only print the stats in the terminal
     #[arg(long)]
     no_image: bool,
+}
+
+/// Where the song database is read from.
+#[derive(Args)]
+struct DbArgs {
+    /// Song database with the song length of YouTube Music plays: a URL or a local file [default: the one in the mw repository]
+    #[arg(long, value_name = "URL|PATH", conflicts_with = "offline")]
+    db: Option<String>,
+
+    /// Use the cached copy of the song database instead of downloading it
+    #[arg(long)]
+    offline: bool,
+}
+
+impl DbArgs {
+    fn origin(&self) -> songdb::Origin<'_> {
+        songdb::Origin::new(self.db.as_deref(), self.offline)
+    }
+}
+
+/// Commands other than the recap.
+#[derive(Subcommand)]
+enum Command {
+    /// Song database tools
+    #[command(subcommand)]
+    Db(DbCommand),
+}
+
+/// `mw db` commands.
+#[derive(Subcommand)]
+enum DbCommand {
+    /// Write the song lengths of your Spotify full plays to a file you can share, without your listening history
+    ExportSpotify {
+        /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
+        #[arg(long, value_name = "DIR")]
+        spotify: PathBuf,
+
+        #[command(flatten)]
+        db: DbArgs,
+    },
+
+    /// Add Spotify song lengths to the song database file (for the maintainer)
+    #[command(hide = true)]
+    ImportSpotify {
+        #[command(flatten)]
+        from: ImportFrom,
+
+        /// Song database file to add the songs to
+        #[arg(long, value_name = "PATH", default_value = "data/songs.json")]
+        songs: PathBuf,
+
+        /// Only print what would be added
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Also list the songs added and skipped, not only how many
+        #[arg(long)]
+        list: bool,
+    },
+}
+
+/// Where `mw db import-spotify` reads the song lengths from.
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct ImportFrom {
+    /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
+    #[arg(long, value_name = "DIR")]
+    spotify: Option<PathBuf>,
+
+    /// A file written by `mw db export-spotify`
+    #[arg(long, value_name = "PATH")]
+    file: Option<PathBuf>,
 }
 
 /// Values of `--source`: which services count towards the stats.
@@ -140,6 +212,17 @@ enum RankArg {
 /// wasn't given, or when no plays are left after filtering.
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Some(Command::Db(cmd)) = &cli.command {
+        return match cmd {
+            DbCommand::ExportSpotify { spotify, db } => export_spotify(spotify, db.origin()),
+            DbCommand::ImportSpotify {
+                from,
+                songs,
+                dry_run,
+                list,
+            } => import_spotify(from, songs, *dry_run, *list),
+        };
+    }
 
     if cli.spotify.is_none() && cli.ytm.is_none() {
         bail!("Provide at least one source: --spotify <folder> and/or --ytm <watch-history.json>");
@@ -185,11 +268,7 @@ fn main() -> Result<()> {
     if wants(source, Source::YouTubeMusic)
         && let Some(file) = &cli.ytm
     {
-        plays.extend(load_ytm(
-            file,
-            cli.ytm_avg_minutes,
-            songdb::Origin::new(cli.db.as_deref(), cli.offline),
-        )?);
+        plays.extend(load_ytm(file, cli.ytm_avg_minutes, cli.db.origin())?);
     }
 
     let filters = Filters {
@@ -233,7 +312,7 @@ fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Pla
     if let Some(db) = db {
         let matched = songdb::apply(&mut loaded.plays, &db);
         eprintln!(
-            "YouTube Music: real length for {} of {} from the song database",
+            "YouTube Music: song length for {} of {} from the song database",
             fmt_int(matched as u64),
             fmt_count(loaded.plays.len() as u64, "play")
         );
@@ -242,6 +321,102 @@ fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Pla
         eprintln!("  warning: {w}");
     }
     Ok(loaded.plays)
+}
+
+/// Writes the song lengths of the Spotify full plays that the song database
+/// doesn't have to `spotify-durations-<local date and time>.json`, the unverified
+/// ones with a `check`.
+fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
+    let plays = sources::spotify::full_plays(dir)?;
+    let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
+    for w in &warnings {
+        eprintln!("warning: {w}");
+    }
+    if db.is_none() {
+        eprintln!("warning: no song database; exporting every song");
+    }
+    let m = lengths::measure(&plays, |k| db.as_ref().is_some_and(|d| d.contains(k)));
+
+    let file = chrono::Local::now()
+        .format("spotify-durations-%Y-%m-%d-%H%M%S.json")
+        .to_string();
+    let json = serde_json::to_string_pretty(&m.songs)? + "\n";
+    fs::write(&file, json).with_context(|| format!("cannot write {file}"))?;
+
+    println!(
+        "Wrote {} to {file}",
+        fmt_count(m.songs.len() as u64, "song")
+    );
+    print_songs("  to check, only one full play", m.single, [], false);
+    print_songs(
+        "  to check, full plays don't agree on a length",
+        m.inconsistent,
+        [],
+        false,
+    );
+    print_songs("Already in the song database", m.known, [], false);
+    if m.single + m.inconsistent > 0 {
+        println!(
+            "Songs to check have a \"check\" field: fix \"seconds\" if needed (seconds or \"m:ss\") and remove \"check\" to import them."
+        );
+    }
+    Ok(())
+}
+
+/// Adds song lengths from a Spotify history or an export file to the song
+/// database file, and counts (with `list`, lists) what it added and skipped.
+fn import_spotify(from: &ImportFrom, file: &Path, dry_run: bool, list: bool) -> Result<()> {
+    let songs = match (&from.spotify, &from.file) {
+        (Some(dir), _) => lengths::measure(&sources::spotify::full_plays(dir)?, |_| false).songs,
+        (None, Some(path)) => {
+            let text = fs::read_to_string(path)
+                .with_context(|| format!("cannot read {}", path.display()))?;
+            serde_json::from_str(&text)
+                .with_context(|| format!("{} is not an export-spotify file", path.display()))?
+        }
+        (None, None) => unreachable!("clap requires --spotify or --file"),
+    };
+    let r = songdb::import(file, songs, dry_run)?;
+
+    let verb = if dry_run { "Would add to" } else { "Added to" };
+    let length = |s: &lengths::SongLength| {
+        format!("{} · {}  ({})", s.artist, s.title, lengths::mmss(s.seconds))
+    };
+    print_songs(
+        &format!("{verb} {}", file.display()),
+        r.added.len(),
+        r.added.iter().map(length),
+        list,
+    );
+    print_songs("Already present", r.present, [], false);
+    let (lo, hi) = (songdb::IMPORT_RANGE.start(), songdb::IMPORT_RANGE.end());
+    print_songs(
+        &format!("Skipped, length outside {lo}–{hi} s"),
+        r.out_of_range.len(),
+        r.out_of_range.iter().map(length),
+        list,
+    );
+    print_songs("Skipped, no artist or title", r.unnamed, [], false);
+    if r.to_check > 0 {
+        eprintln!(
+            "warning: skipped {} still marked \"check\"",
+            fmt_count(r.to_check as u64, "song")
+        );
+    }
+    Ok(())
+}
+
+/// Prints `heading: <n>` unless `n` is 0, and with `list` one line per song.
+fn print_songs(heading: &str, n: usize, lines: impl IntoIterator<Item = String>, list: bool) {
+    if n == 0 {
+        return;
+    }
+    println!("{heading}: {}", fmt_int(n as u64));
+    if list {
+        for line in lines {
+            println!("  {line}");
+        }
+    }
 }
 
 /// Is this source included? `None` means all sources.
