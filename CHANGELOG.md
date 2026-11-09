@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/lulivi/mw/compare/v0.1.4...v0.2.0) - 2026-11-09
+
+### Added
+
+- *(db)* [**breaking**] share YouTube Music songs and resolve lengths with MusicBrainz ([#28](https://github.com/lulivi/mw/pull/28))
+- *(db)* share Spotify song lengths with export-spotify / import-spotify ([#27](https://github.com/lulivi/mw/pull/27))
+- *(ytmusic)* [**breaking**] replace the YouTube API with a shared song database ([#24](https://github.com/lulivi/mw/pull/24))
+
 ## [0.1.4](https://github.com/lulivi/mw/compare/v0.1.3...v0.1.4) - 2026-11-08
 
 ### Added
