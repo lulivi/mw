@@ -6,6 +6,7 @@
 
 mod lengths;
 mod model;
+mod musicbrainz;
 mod normalize;
 mod render;
 mod songdb;
@@ -140,6 +141,18 @@ enum DbCommand {
         db: DbArgs,
     },
 
+    /// Look up in MusicBrainz the songs of a contribution file that have a "check", editing the file (for the maintainer)
+    #[command(hide = true)]
+    Resolve {
+        /// A contribution file (written by `mw db export-spotify` or `export-ytm`)
+        #[arg(long, value_name = "PATH")]
+        file: PathBuf,
+
+        /// Look up at most this many songs (each takes over a second)
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+
     /// Add the songs of a contribution file to the song database file (for the maintainer)
     #[command(hide = true)]
     Import {
@@ -214,6 +227,7 @@ fn main() -> Result<()> {
         return match cmd {
             DbCommand::ExportSpotify { spotify, db } => export_spotify(spotify, db.origin()),
             DbCommand::ExportYtm { ytm, db } => export_ytm(ytm, db.origin()),
+            DbCommand::Resolve { file, limit } => resolve(file, *limit),
             DbCommand::Import {
                 file,
                 songs,
@@ -380,6 +394,29 @@ fn write_contribution(prefix: &str, songs: &[lengths::SongLength]) -> Result<()>
     let json = serde_json::to_string_pretty(songs)? + "\n";
     fs::write(&file, json).with_context(|| format!("cannot write {file}"))?;
     println!("Wrote {} to {file}", fmt_count(songs.len() as u64, "song"));
+    Ok(())
+}
+
+/// Looks up the songs to check of a contribution file in MusicBrainz and says
+/// what is left to review.
+fn resolve(file: &Path, limit: Option<usize>) -> Result<()> {
+    let mut client =
+        musicbrainz::Client::new(musicbrainz::URL, musicbrainz::DELAY, musicbrainz::BACKOFF);
+    let r = musicbrainz::resolve(file, &mut client, limit)?;
+    println!("Found in MusicBrainz: {}", fmt_int(r.found as u64));
+    print_songs(
+        "To check, far from the lengths played",
+        r.far.len(),
+        r.far,
+        true,
+    );
+    print_songs("Not in MusicBrainz", r.not_found.len(), r.not_found, true);
+    if r.left > 0 {
+        println!(
+            "Still to look up: {} (run again to continue)",
+            fmt_int(r.left as u64)
+        );
+    }
     Ok(())
 }
 

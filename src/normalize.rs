@@ -118,7 +118,12 @@ pub fn artist_key(artist: &str) -> String {
 /// Song key: the artist key, `|` and the cleaned title, so the same song merges across
 /// sources but songs with the same title by different artists don't.
 pub fn track_key(artist: &str, track: &str) -> String {
-    format!("{}|{}", artist_key(artist), key(&clean_title(track)))
+    format!("{}|{}", artist_key(artist), title_key(track))
+}
+
+/// Title key: the title part of [`track_key`].
+pub fn title_key(track: &str) -> String {
+    key(&clean_title(track))
 }
 
 #[cfg(test)]
