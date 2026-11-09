@@ -130,6 +130,16 @@ enum DbCommand {
         db: DbArgs,
     },
 
+    /// Write the YouTube Music songs the song database doesn't have to a file you can share, without your listening history
+    ExportYtm {
+        /// Path to watch-history.json from Google Takeout
+        #[arg(long, value_name = "FILE")]
+        ytm: PathBuf,
+
+        #[command(flatten)]
+        db: DbArgs,
+    },
+
     /// Add the songs of a contribution file to the song database file (for the maintainer)
     #[command(hide = true)]
     Import {
@@ -203,6 +213,7 @@ fn main() -> Result<()> {
     if let Some(Command::Db(cmd)) = &cli.command {
         return match cmd {
             DbCommand::ExportSpotify { spotify, db } => export_spotify(spotify, db.origin()),
+            DbCommand::ExportYtm { ytm, db } => export_ytm(ytm, db.origin()),
             DbCommand::Import {
                 file,
                 songs,
@@ -325,16 +336,7 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
     }
     let m = lengths::measure(&plays, |k| db.as_ref().is_some_and(|d| d.contains(k)));
 
-    let file = chrono::Local::now()
-        .format("spotify-durations-%Y-%m-%d-%H%M%S.json")
-        .to_string();
-    let json = serde_json::to_string_pretty(&m.songs)? + "\n";
-    fs::write(&file, json).with_context(|| format!("cannot write {file}"))?;
-
-    println!(
-        "Wrote {} to {file}",
-        fmt_count(m.songs.len() as u64, "song")
-    );
+    write_contribution("spotify-durations", &m.songs)?;
     print_songs("  to check, only one full play", m.single, [], false);
     print_songs(
         "  to check, full plays don't agree on a length",
@@ -348,6 +350,36 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
             "Songs to check have a \"check\" field: set \"seconds\" if needed (seconds or \"m:ss\") and remove \"check\" to import them."
         );
     }
+    Ok(())
+}
+
+/// Writes the YouTube Music songs the song database doesn't have to
+/// `ytm-missing-<local date and time>.json`.
+fn export_ytm(file: &Path, origin: songdb::Origin) -> Result<()> {
+    let loaded = sources::ytmusic::load(file, 0.0)?;
+    report("YouTube Music", loaded.plays.len(), &loaded.warnings);
+    let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
+    for w in &warnings {
+        eprintln!("warning: {w}");
+    }
+    if db.is_none() {
+        eprintln!("warning: no song database; exporting every song");
+    }
+    let songs = songdb::missing(&loaded.plays, db.as_ref());
+    write_contribution("ytm-missing", &songs)?;
+    println!("Send this file to the maintainer.");
+    Ok(())
+}
+
+/// Writes `songs` to `<prefix>-<local date and time>.json` and says so.
+fn write_contribution(prefix: &str, songs: &[lengths::SongLength]) -> Result<()> {
+    let file = format!(
+        "{prefix}-{}.json",
+        chrono::Local::now().format("%Y-%m-%d-%H%M%S")
+    );
+    let json = serde_json::to_string_pretty(songs)? + "\n";
+    fs::write(&file, json).with_context(|| format!("cannot write {file}"))?;
+    println!("Wrote {} to {file}", fmt_count(songs.len() as u64, "song"));
     Ok(())
 }
 

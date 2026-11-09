@@ -6,7 +6,7 @@
 //! copy is used; with no copy either, YouTube Music plays keep
 //! the estimate. Nothing here fails the run.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -15,9 +15,9 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::lengths::SongLength;
+use crate::lengths::{SongLength, most_common};
 use crate::model::{Play, Source};
-use crate::normalize::track_key;
+use crate::normalize::{clean_title, track_key};
 
 /// Where the database is downloaded from by default.
 pub const DEFAULT_URL: &str = "https://raw.githubusercontent.com/lulivi/mw/main/data/songs.json";
@@ -25,6 +25,8 @@ pub const DEFAULT_URL: &str = "https://raw.githubusercontent.com/lulivi/mw/main/
 const VERSION: u32 = 1;
 /// Song lengths an import accepts, in seconds.
 pub const IMPORT_RANGE: std::ops::RangeInclusive<u64> = 30..=1200;
+/// `check` of a song whose length nobody knows yet.
+pub const NO_LENGTH: &str = "no length";
 /// Most time a download may take before falling back to the cached copy.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -212,36 +214,83 @@ fn save(path: &Path, text: &str) -> Result<()> {
     fs::write(path, text).with_context(|| format!("cannot write {}", path.display()))
 }
 
+/// Finds the song of a play: by video ID (`true`: the play takes the database
+/// names), else by song key.
+fn find<'a>(by_video: &HashMap<&str, &'a Song>, db: &'a Db, p: &Play) -> Option<(&'a Song, bool)> {
+    match p.video_id.as_deref().and_then(|id| by_video.get(id)) {
+        Some(s) => Some((s, true)),
+        None => db
+            .songs
+            .get(&track_key(&p.artist, &p.track))
+            .map(|s| (s, false)),
+    }
+}
+
+/// Video ID -> song.
+fn by_video(db: &Db) -> HashMap<&str, &Song> {
+    db.songs
+        .values()
+        .flat_map(|s| s.video_ids.iter().map(move |id| (id.as_str(), s)))
+        .collect()
+}
+
 /// Gives YouTube Music plays their song length: by video ID (also taking the
 /// database names), else by song key. Others keep the estimate. Returns how many
 /// plays got a song length.
 pub fn apply(plays: &mut [Play], db: &Db) -> usize {
-    let by_video: HashMap<&str, &Song> = db
-        .songs
-        .values()
-        .flat_map(|s| s.video_ids.iter().map(move |id| (id.as_str(), s)))
-        .collect();
+    let by_video = by_video(db);
     let mut matched = 0;
     for p in plays
         .iter_mut()
         .filter(|p| p.source == Source::YouTubeMusic)
     {
-        let song = match p.video_id.as_deref().and_then(|id| by_video.get(id)) {
-            Some(s) => {
-                p.track = s.title.clone();
-                p.artist = s.artist.clone();
-                s
-            }
-            None => match db.songs.get(&track_key(&p.artist, &p.track)) {
-                Some(s) => s,
-                None => continue,
-            },
+        let Some((song, by_id)) = find(&by_video, db, p) else {
+            continue;
         };
+        if by_id {
+            p.track = song.title.clone();
+            p.artist = song.artist.clone();
+        }
         p.ms_played = song.seconds * 1000;
         p.estimated = false;
         matched += 1;
     }
     matched
+}
+
+/// The YouTube Music songs the database doesn't have (found as [`apply`] does),
+/// one per song key, sorted by it: names in their most frequent spelling with
+/// the title cleaned, every video ID, and a `check` asking for the length.
+pub fn missing(plays: &[Play], db: Option<&Db>) -> Vec<SongLength> {
+    let empty = Db::default();
+    let db = db.unwrap_or(&empty);
+    let by_video = by_video(db);
+    let mut by_key: BTreeMap<String, Vec<&Play>> = BTreeMap::new();
+    for p in plays.iter().filter(|p| p.source == Source::YouTubeMusic) {
+        if find(&by_video, db, p).is_none() {
+            by_key
+                .entry(track_key(&p.artist, &p.track))
+                .or_default()
+                .push(p);
+        }
+    }
+    by_key
+        .into_values()
+        .map(|plays| {
+            let (artist, title) =
+                most_common(plays.iter().map(|p| (&p.artist, &p.track))).expect("a song has plays");
+            let video_ids: BTreeSet<&String> =
+                plays.iter().filter_map(|p| p.video_id.as_ref()).collect();
+            SongLength {
+                artist: artist.clone(),
+                title: clean_title(title),
+                video_ids: video_ids.into_iter().cloned().collect(),
+                check: Some(NO_LENGTH.into()),
+                seconds: None,
+                ..Default::default()
+            }
+        })
+        .collect()
 }
 
 /// What [`import`] did.
@@ -414,6 +463,25 @@ mod tests {
             got(&plays[2]),
             ("Nobody".into(), "Unknown".into(), 210_000, true)
         );
+    }
+
+    #[test]
+    fn missing_leaves_out_known_songs() {
+        let db = parse(DB).unwrap();
+        let plays = vec![
+            yt("aaaaaaaaaaa", "Some Label", "Anything"), // known by video ID
+            yt("bbbbbbbbbbb", "Repion", "Brillante"),    // known by key
+            yt("ccccccccccc", "Nobody", "Unknown (Official Video)"),
+            yt("ddddddddddd", "Nobody", "Unknown"),
+            yt("ccccccccccc", "Nobody", "Unknown (Official Video)"),
+        ];
+        let json = serde_json::to_value(missing(&plays, Some(&db))).unwrap();
+        assert_eq!(
+            json,
+            json!([{"artist": "Nobody", "title": "Unknown",
+                "video_ids": ["ccccccccccc", "ddddddddddd"], "check": "no length", "seconds": null}])
+        );
+        assert_eq!(missing(&plays, None).len(), 3);
     }
 
     fn length(artist: &str, title: &str, seconds: u64) -> SongLength {
