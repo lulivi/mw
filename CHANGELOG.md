@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/lulivi/mw/compare/v0.2.2...v0.2.3) - 2026-11-10
+
+### Added
+
+- add install scripts and x64 macOS, arm64 Linux builds ([#39](https://github.com/lulivi/mw/pull/39))
+
+### Other
+
+- *(db)* add the second round of songs ([#36](https://github.com/lulivi/mw/pull/36))
+
 ## [0.2.2](https://github.com/lulivi/mw/compare/v0.2.1...v0.2.2) - 2026-11-10
 
 ### Added
