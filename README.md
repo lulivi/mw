@@ -30,7 +30,19 @@ Made from a fictional listening history (2021–2025; YouTube Music from 2024).
 
 ## Installation
 
-Prebuilt binaries of the latest release:
+Download the latest release into the current directory:
+
+```bash
+# Linux and macOS
+curl -fsSL https://raw.githubusercontent.com/lulivi/mw/main/scripts/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/lulivi/mw/main/scripts/install.ps1 | iex
+```
+
+They check the download against its checksum and overwrite any `mw` already there. Or pick the prebuilt binary yourself:
 
 - macOS (Apple Silicon): [mw-aarch64-apple-darwin.tar.gz](https://github.com/lulivi/mw/releases/latest/download/mw-aarch64-apple-darwin.tar.gz)
 - macOS (Intel): [mw-x86_64-apple-darwin.tar.gz](https://github.com/lulivi/mw/releases/latest/download/mw-x86_64-apple-darwin.tar.gz)
