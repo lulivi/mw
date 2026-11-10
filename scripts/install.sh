@@ -25,9 +25,9 @@ main() {
   curl -fsSL -o "$tmp/$archive.sha256" "$releases/latest/download/$archive.sha256"
 
   if command -v sha256sum >/dev/null; then
-    (cd "$tmp" && sha256sum -c --quiet "$archive.sha256") || fail "checksum mismatch for $archive"
+    (cd "$tmp" && sha256sum -c "$archive.sha256" >/dev/null) || fail "checksum mismatch for $archive"
   else
-    (cd "$tmp" && shasum -a 256 -c --quiet "$archive.sha256") || fail "checksum mismatch for $archive"
+    (cd "$tmp" && shasum -a 256 -c "$archive.sha256" >/dev/null) || fail "checksum mismatch for $archive"
   fi
 
   tar -xzf "$tmp/$archive" -C "$tmp" mw
