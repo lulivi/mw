@@ -50,6 +50,7 @@ fn builds_mobile_png_with_both_sources() {
     assert!(stdout.contains("1. Rosalía  (11 min, 3 plays)"), "{stdout}");
     assert!(stdout.contains("Spotify:"));
     assert!(stdout.contains("YouTube Music:"));
+    assert!(stdout.contains("Minutes per month:\n  2025-01"), "{stdout}");
 
     let bytes = std::fs::read(&out).unwrap();
     assert_eq!(png_size(&bytes), (1080, 1920));
@@ -75,6 +76,21 @@ fn terminal_only_and_spotify_only() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Malamente"));
     assert!(!stdout.contains("≈"));
+}
+
+#[test]
+fn terminal_goes_by_year_past_24_months() {
+    let output = bin()
+        .arg("--spotify")
+        .arg(fixtures().join("spotify"))
+        .args(["--from", "2023-01-01", "--to", "2025-12-31", "--no-image"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Minutes per year:\n  2023 "), "{stdout}");
+    assert!(stdout.contains("\n  2025 "), "{stdout}");
+    assert!(!stdout.contains("2025-01"), "{stdout}");
 }
 
 #[test]

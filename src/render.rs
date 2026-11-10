@@ -405,24 +405,17 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> 
 /// The bars fill the width up to a maximum, centered as a group, and the top one
 /// shows its value above it in the accent color.
 fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
-    let by_year = s.by_month.len() > 24;
-    let mut bars: Vec<(String, u64)> = Vec::new();
-    if by_year {
-        for ((y, _), ms) in &s.by_month {
-            match bars.last_mut() {
-                Some((label, total)) if *label == y.to_string() => *total += ms,
-                _ => bars.push((y.to_string(), *ms)),
-            }
-        }
-    } else {
-        bars = s
+    let years = s.by_year();
+    let bars: Vec<(String, u64)> = match &years {
+        Some(years) => years.iter().map(|(y, ms)| (y.to_string(), *ms)).collect(),
+        None => s
             .by_month
             .iter()
             .map(|((_, mo), ms)| (MONTH_INITIALS[(*mo - 1) as usize].to_string(), *ms))
-            .collect();
-    }
+            .collect(),
+    };
 
-    let title = if by_year {
+    let title = if years.is_some() {
         "Minutes per year"
     } else {
         "Minutes per month"
