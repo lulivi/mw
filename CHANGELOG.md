@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/lulivi/mw/compare/v0.2.1...v0.2.2) - 2026-11-10
+
+### Added
+
+- group the terminal chart section like the image ([#34](https://github.com/lulivi/mw/pull/34))
+- *(ytmusic)* detect the Takeout title wording in any language ([#32](https://github.com/lulivi/mw/pull/32))
+
 ## [0.2.1](https://github.com/lulivi/mw/compare/v0.2.0...v0.2.1) - 2026-11-09
 
 ### Added
