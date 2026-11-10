@@ -110,7 +110,7 @@ How the files are checked and added: [docs/reviewing-contributions.md](docs/revi
 cargo build --release              # target/release/mw
 cargo run --release -- --help      # build and run with arguments
 ./scripts/test.sh                  # cargo test
-./scripts/lint.sh                  # cargo fmt --check + clippy, as CI runs them
+./scripts/lint.sh                  # cargo fmt --check + clippy + shellcheck, as CI runs them
 ./scripts/samples.sh               # regenerate docs/samples/ after changing the image
 ./scripts/dist.sh                  # cross-compile the release zips into dist/ (needs Docker)
 ```
