@@ -538,9 +538,19 @@ fn print_stats(s: &Stats) {
         );
     }
 
-    println!("\nBy month:");
-    for ((y, m), ms) in &s.by_month {
-        println!("  {y}-{m:02}  {:>8} min", fmt_int(minutes(*ms)));
+    match s.by_year() {
+        Some(years) => {
+            println!("\nMinutes per year:");
+            for (y, ms) in years {
+                println!("  {y}  {:>8} min", fmt_int(minutes(ms)));
+            }
+        }
+        None => {
+            println!("\nMinutes per month:");
+            for ((y, m), ms) in &s.by_month {
+                println!("  {y}-{m:02}  {:>8} min", fmt_int(minutes(*ms)));
+            }
+        }
     }
 
     println!("\nTop artists:");

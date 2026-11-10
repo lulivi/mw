@@ -76,6 +76,24 @@ pub struct Stats {
     pub by_source: Vec<(Source, u64)>,
 }
 
+impl Stats {
+    /// Minutes per calendar year, in order, when the range covers more than 24
+    /// months: the chart (image and terminal) then goes by year instead of month.
+    pub fn by_year(&self) -> Option<Vec<(i32, u64)>> {
+        if self.by_month.len() <= 24 {
+            return None;
+        }
+        let mut years: Vec<(i32, u64)> = Vec::new();
+        for ((y, _), ms) in &self.by_month {
+            match years.last_mut() {
+                Some((last, total)) if last == y => *total += ms,
+                _ => years.push((*y, *ms)),
+            }
+        }
+        Some(years)
+    }
+}
+
 /// Running totals for one artist or song while the plays are aggregated.
 #[derive(Default)]
 struct Acc {
@@ -371,5 +389,22 @@ mod tests {
         assert_eq!(s.top_artists[0].name, "Short");
         let s = compute(&plays, &filters(), 5, RankBy::Minutes).unwrap();
         assert_eq!(s.top_artists[0].name, "Long");
+    }
+
+    #[test]
+    fn by_year_only_past_24_months() {
+        let plays = vec![play("2025-03-10 10:00", "A", "T", 200_000, Source::Spotify)];
+        let range = |from| Filters {
+            from: NaiveDate::from_ymd_opt(from, 1, 1),
+            to: NaiveDate::from_ymd_opt(2025, 12, 31),
+            ..filters()
+        };
+        let s = compute(&plays, &range(2024), 5, RankBy::Minutes).unwrap();
+        assert_eq!(s.by_year(), None);
+        let s = compute(&plays, &range(2023), 5, RankBy::Minutes).unwrap();
+        assert_eq!(
+            s.by_year(),
+            Some(vec![(2023, 0), (2024, 0), (2025, 200_000)])
+        );
     }
 }
