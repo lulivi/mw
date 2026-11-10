@@ -30,13 +30,27 @@ Made from a fictional listening history (2021–2025; YouTube Music from 2024).
 
 ## Installation
 
-Prebuilt binaries of the latest release:
+Download the latest release into the current directory:
 
-- macOS (Apple Silicon): [mw-aarch64-apple-darwin.zip](https://github.com/lulivi/mw/releases/latest/download/mw-aarch64-apple-darwin.zip)
+```bash
+# Linux and macOS
+curl -fsSL https://raw.githubusercontent.com/lulivi/mw/main/scripts/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/lulivi/mw/main/scripts/install.ps1 | iex
+```
+
+They check the download against its checksum and overwrite any `mw` already there. Or pick the prebuilt binary yourself:
+
+- macOS (Apple Silicon): [mw-aarch64-apple-darwin.tar.gz](https://github.com/lulivi/mw/releases/latest/download/mw-aarch64-apple-darwin.tar.gz)
+- macOS (Intel): [mw-x86_64-apple-darwin.tar.gz](https://github.com/lulivi/mw/releases/latest/download/mw-x86_64-apple-darwin.tar.gz)
 - Windows (x64): [mw-x86_64-pc-windows-gnu.zip](https://github.com/lulivi/mw/releases/latest/download/mw-x86_64-pc-windows-gnu.zip)
-- Linux (x64, static): [mw-x86_64-unknown-linux-musl.zip](https://github.com/lulivi/mw/releases/latest/download/mw-x86_64-unknown-linux-musl.zip)
+- Linux (x64, static): [mw-x86_64-unknown-linux-musl.tar.gz](https://github.com/lulivi/mw/releases/latest/download/mw-x86_64-unknown-linux-musl.tar.gz)
+- Linux (arm64, static): [mw-aarch64-unknown-linux-musl.tar.gz](https://github.com/lulivi/mw/releases/latest/download/mw-aarch64-unknown-linux-musl.tar.gz)
 
-Unzip it to get `mw` (`mw.exe` on Windows). The binaries aren't signed: on macOS, run `xattr -d com.apple.quarantine mw` once if it refuses to open.
+Extract it to get `mw` (`mw.exe` on Windows); each archive has a `.sha256` next to it. The binaries aren't signed: on macOS, run `xattr -d com.apple.quarantine mw` once if it refuses to open.
 
 With Rust installed, you can instead run `cargo install --git https://github.com/lulivi/mw`.
 
@@ -110,9 +124,9 @@ How the files are checked and added: [docs/reviewing-contributions.md](docs/revi
 cargo build --release              # target/release/mw
 cargo run --release -- --help      # build and run with arguments
 ./scripts/test.sh                  # cargo test
-./scripts/lint.sh                  # cargo fmt --check + clippy, as CI runs them
+./scripts/lint.sh                  # cargo fmt --check + clippy + shellcheck, as CI runs them
 ./scripts/samples.sh               # regenerate docs/samples/ after changing the image
-./scripts/dist.sh                  # cross-compile the release zips into dist/ (needs Docker)
+./scripts/dist.sh                  # cross-compile the release archives into dist/ (needs Docker)
 ```
 
 Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `songdb.rs` loads the song database and applies its lengths, `lengths.rs` measures song lengths from Spotify full plays and defines the contribution file, `musicbrainz.rs` looks up song lengths for `mw db resolve`, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
