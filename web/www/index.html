@@ -38,40 +38,43 @@
 
   <section aria-labelledby="options-title">
     <h2 id="options-title">2. Choose the options</h2>
+    <p id="needs-file" class="hint">Add a file first to choose the options.</p>
     <form id="options">
-      <fieldset>
-        <legend>Period</legend>
-        <label><input type="radio" name="period" value="all" checked> Whole history</label>
-        <label><input type="radio" name="period" value="year"> Year
-          <select id="year" name="year" aria-label="Year" disabled></select></label>
-        <label><input type="radio" name="period" value="range"> From
-          <input id="from" name="from" type="date" aria-label="From" disabled>
-          to <input id="to" name="to" type="date" aria-label="To" disabled></label>
+      <fieldset id="settings" disabled>
+        <fieldset>
+          <legend>Period</legend>
+          <label><input type="radio" name="period" value="all" checked> Whole history</label>
+          <label><input type="radio" name="period" value="year"> Year
+            <select id="year" name="year" aria-label="Year" disabled></select></label>
+          <label><input type="radio" name="period" value="range"> From
+            <input id="from" name="from" type="date" aria-label="From" disabled>
+            to <input id="to" name="to" type="date" aria-label="To" disabled></label>
+        </fieldset>
+        <label>Sources
+          <select name="source">
+            <option value="all">All</option>
+            <option value="spotify">Spotify</option>
+            <option value="ytm">YouTube Music</option>
+          </select></label>
+        <label>Rank by
+          <select name="rankBy">
+            <option value="plays">Plays</option>
+            <option value="minutes">Minutes</option>
+          </select></label>
+        <fieldset class="colors">
+          <legend>Color</legend>
+          <label style="--c:#FF6B4A"><input type="radio" name="color" value="orange" checked> Orange</label>
+          <label style="--c:#B388FF"><input type="radio" name="color" value="purple"> Purple</label>
+          <label style="--c:#5AA9FF"><input type="radio" name="color" value="blue"> Blue</label>
+          <label style="--c:#3DDC97"><input type="radio" name="color" value="green"> Green</label>
+          <label style="--c:#FF6FB5"><input type="radio" name="color" value="pink"> Pink</label>
+          <label style="--c:#FF5A5F"><input type="radio" name="color" value="red"> Red</label>
+          <label style="--c:#E3E7EB"><input type="radio" name="color" value="gray"> Gray</label>
+        </fieldset>
+        <label>Time zone
+          <select id="tz" name="tz"></select></label>
+        <button id="create" type="submit">Create image</button>
       </fieldset>
-      <label>Sources
-        <select name="source">
-          <option value="all">All</option>
-          <option value="spotify">Spotify</option>
-          <option value="ytm">YouTube Music</option>
-        </select></label>
-      <label>Rank by
-        <select name="rankBy">
-          <option value="plays">Plays</option>
-          <option value="minutes">Minutes</option>
-        </select></label>
-      <fieldset class="colors">
-        <legend>Color</legend>
-        <label style="--c:#FF6B4A"><input type="radio" name="color" value="orange" checked> Orange</label>
-        <label style="--c:#B388FF"><input type="radio" name="color" value="purple"> Purple</label>
-        <label style="--c:#5AA9FF"><input type="radio" name="color" value="blue"> Blue</label>
-        <label style="--c:#3DDC97"><input type="radio" name="color" value="green"> Green</label>
-        <label style="--c:#FF6FB5"><input type="radio" name="color" value="pink"> Pink</label>
-        <label style="--c:#FF5A5F"><input type="radio" name="color" value="red"> Red</label>
-        <label style="--c:#E3E7EB"><input type="radio" name="color" value="gray"> Gray</label>
-      </fieldset>
-      <label>Time zone
-        <select id="tz" name="tz"></select></label>
-      <button id="create" type="submit" disabled>Create image</button>
     </form>
   </section>
 

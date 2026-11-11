@@ -10,7 +10,6 @@ const worker = new Worker(new URL("worker.js", import.meta.url), { type: "module
 let nextId = 0;
 /** Whether the files added can make an image (they hold a history and agree). */
 let ready = false;
-let busy = false;
 let imageUrl;
 /** Whether the page is one column (a phone), with the image at the end. */
 const oneColumn = matchMedia("(max-width: 899px)");
@@ -52,7 +51,6 @@ function add(fileList) {
     files.push({ id, file });
   }
   if (files.length) {
-    setBusy(true);
     worker.postMessage({ type: "add", files, tz: form.tz.value });
   }
 }
@@ -70,7 +68,6 @@ function fileRow(id, name) {
   remove.setAttribute("aria-label", `Remove ${name}`);
   remove.addEventListener("click", () => {
     row.remove();
-    setBusy(true);
     worker.postMessage({ type: "remove", id, tz: form.tz.value });
   });
   const lines = document.createElement("ul");
@@ -108,7 +105,6 @@ form.addEventListener("submit", (e) => {
     color: form.color.value,
     tz: form.tz.value,
   };
-  setBusy(true);
   worker.postMessage({ type: "create", options });
 });
 
@@ -120,38 +116,30 @@ worker.onmessage = ({ data: msg }) => {
     if (msg.error) show(row, [], msg.error);
     else show(row, msg.lines);
   } else if (msg.type === "state") {
-    setBusy(false);
     setReady(!msg.error && msg.years.length > 0, msg.years);
     $("status").textContent = msg.error ?? "";
     $("status").classList.toggle("error", Boolean(msg.error));
-  } else if (msg.type === "result") {
-    setBusy(false);
-    result(msg);
-  } else if (msg.type === "error") {
-    setBusy(false);
+  } else if (msg.type === "result") result(msg);
+  else if (msg.type === "error") {
     $("status").textContent = "";
     $("error").hidden = false;
     $("error").textContent = msg.message;
   }
 };
 worker.onerror = (e) => {
-  setBusy(false);
   $("status").textContent = `Something went wrong: ${e.message}`;
   $("status").classList.add("error");
 };
 
-/** Fills the year list, keeping the year chosen if it's still there. */
+/** Opens step 2 when the files can make an image, and fills the year list,
+ * keeping the year chosen if it's still there. */
 function setReady(value, years) {
   ready = value;
   const chosen = form.year.value;
   form.year.replaceChildren(...years.map((y) => new Option(y, y)));
   form.year.value = years.includes(Number(chosen)) ? chosen : String(years.at(-1) ?? "");
-  $("create").disabled = busy || !ready;
-}
-
-function setBusy(value) {
-  busy = value;
-  $("create").disabled = busy || !ready;
+  $("settings").disabled = !ready;
+  $("needs-file").hidden = ready;
 }
 
 /** Shows the image, with its download and share buttons, notes and text. */

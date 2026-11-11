@@ -121,7 +121,17 @@ fieldset {
   align-items: center;
 }
 legend { padding: 0 0.25rem; font-weight: 600; }
-form > label { display: grid; gap: 0.25rem; font-weight: 600; }
+/* Holds all of step 2, to disable it at once: no box of its own. */
+#settings {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 1rem;
+}
+#settings:disabled { opacity: 0.5; }
+#settings > label { display: grid; gap: 0.25rem; font-weight: 600; }
 
 select, input[type="date"], button, .button {
   font: inherit;
@@ -157,7 +167,6 @@ button[type="submit"], .button {
   text-decoration: none;
   text-align: center;
 }
-button:disabled { opacity: 0.5; cursor: default; }
 .remove { padding: 0.2rem 0.6rem; font-size: 0.85rem; cursor: pointer; }
 
 .frame {
