@@ -4,14 +4,12 @@
 //! song was played, so every play counts as `avg_minutes`.
 
 use std::collections::BTreeSet;
-use std::fs;
-use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-use super::Loaded;
+use super::{File, Loaded};
 use crate::model::{Play, Source};
 use crate::normalize::{clean_artist, strip_artist_prefix};
 
@@ -52,21 +50,16 @@ const SUFFIXES: &[&str] = &[" angesehen", " bekeken"];
 
 /// Loads the plays from `watch-history.json`, counting each as `avg_minutes`.
 ///
-/// Fails if the file doesn't exist, is the HTML export or isn't valid JSON.
-pub fn load(path: &Path, avg_minutes: f64) -> Result<Loaded> {
-    if !path.is_file() {
-        bail!("YouTube Music file does not exist: {}", path.display());
-    }
-    if path.extension().and_then(|e| e.to_str()) == Some("html") {
+/// Fails if the file is the HTML export or isn't valid JSON.
+pub fn load(file: &File, avg_minutes: f64) -> Result<Loaded> {
+    if file.name.ends_with(".html") {
         bail!(
             "{} is HTML. In Google Takeout, choose JSON as the format for the YouTube history.",
-            path.display()
+            file.name
         );
     }
-    let text =
-        fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
     let plays =
-        parse(&text, avg_minutes).with_context(|| format!("cannot parse {}", path.display()))?;
+        parse(file.text()?, avg_minutes).with_context(|| format!("cannot parse {}", file.name))?;
     let mut loaded = Loaded {
         plays,
         warnings: vec![],

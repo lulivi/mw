@@ -4,14 +4,11 @@
 //! If it's not there, falls back to the basic history from "Account data"
 //! (`StreamingHistory_music_*.json`), which only covers the last year.
 
-use std::fs;
-use std::path::{Path, PathBuf};
-
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::Deserialize;
 
-use super::Loaded;
+use super::{File, Loaded};
 use crate::model::{Play, Source};
 use crate::normalize::clean_artist;
 
@@ -40,27 +37,23 @@ struct BasicEntry {
     ms_played: u64,
 }
 
-/// Loads the plays from a folder or a single file, preferring the extended history
-/// over the basic one.
+/// Loads the plays from the files of an export, preferring the extended history
+/// over the basic one. `place` says where the files come from, for messages.
 ///
-/// Fails if the path doesn't exist or holds no Spotify files. A file that can't be
-/// read or parsed is skipped with a warning.
-pub fn load(path: &Path) -> Result<Loaded> {
-    if !path.exists() {
-        bail!("Spotify path does not exist: {}", path.display());
-    }
-
-    let extended = find(path, &["Streaming_History_Audio_*.json"])?;
+/// Fails if none of the files is a Spotify history. A file that can't be read
+/// or parsed is skipped with a warning.
+pub fn load(files: &[File], place: &str) -> Result<Loaded> {
+    let extended = find(files, &["Streaming_History_Audio_*.json"]);
     if !extended.is_empty() {
-        return read_all(&extended, parse_extended);
+        return Ok(read_all(&extended, parse_extended));
     }
 
     let basic = find(
-        path,
+        files,
         &["StreamingHistory_music_*.json", "StreamingHistory*.json"],
-    )?;
+    );
     if !basic.is_empty() {
-        let mut loaded = read_all(&basic, parse_basic)?;
+        let mut loaded = read_all(&basic, parse_basic);
         loaded.warnings.push(
             "Spotify: using the basic history (last year only). Request the \"Extended streaming history\" to get everything."
                 .into(),
@@ -69,30 +62,23 @@ pub fn load(path: &Path) -> Result<Loaded> {
     }
 
     bail!(
-        "No Spotify files found in {}. Looking for Streaming_History_Audio_*.json (extended history) or StreamingHistory_music_*.json.",
-        path.display()
+        "No Spotify files found in {place}. Looking for Streaming_History_Audio_*.json (extended history) or StreamingHistory_music_*.json."
     )
 }
 
 /// Loads only the full plays (those that reached the end of the song) from the
 /// extended history. Fails if there is none: the basic history doesn't say how a
 /// play ended.
-pub fn full_plays(path: &Path) -> Result<Vec<Play>> {
-    if !path.exists() {
-        bail!("Spotify path does not exist: {}", path.display());
-    }
-    let files = find(path, &["Streaming_History_Audio_*.json"])?;
+pub fn full_plays(files: &[File], place: &str) -> Result<Vec<Play>> {
+    let files = find(files, &["Streaming_History_Audio_*.json"]);
     if files.is_empty() {
         bail!(
-            "Spotify song lengths need the Extended streaming history (Streaming_History_Audio_*.json) in {}; the basic history doesn't say whether a play reached the end",
-            path.display()
+            "Spotify song lengths need the Extended streaming history (Streaming_History_Audio_*.json) in {place}; the basic history doesn't say whether a play reached the end"
         );
     }
     let mut plays = vec![];
-    for file in &files {
-        let text =
-            fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
-        let entries = parse_entries(&text).with_context(|| format!("in {}", file.display()))?;
+    for file in files {
+        let entries = parse_entries(file.text()?).with_context(|| format!("in {}", file.name))?;
         plays.extend(
             entries
                 .into_iter()
@@ -103,47 +89,33 @@ pub fn full_plays(path: &Path) -> Result<Vec<Play>> {
     Ok(plays)
 }
 
-/// Finds the files matching the patterns. Accepts a single file or a folder
-/// (subfolders are searched too, since Spotify's ZIP contains a folder).
-fn find(path: &Path, patterns: &[&str]) -> Result<Vec<PathBuf>> {
-    if path.is_file() {
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        let ok = patterns.iter().any(|p| {
-            glob::Pattern::new(p)
-                .map(|g| g.matches(name))
-                .unwrap_or(false)
-        });
-        return Ok(if ok { vec![path.to_path_buf()] } else { vec![] });
-    }
-    for pattern in patterns {
-        let full = path.join("**").join(pattern);
-        let mut files: Vec<PathBuf> = glob::glob(&full.to_string_lossy())
-            .context("invalid search pattern")?
-            .filter_map(|r| r.ok())
-            .collect();
-        files.sort();
-        if !files.is_empty() {
-            return Ok(files);
-        }
-    }
-    Ok(vec![])
+/// The files whose name matches the first of the patterns that matches any.
+fn find<'a>(files: &'a [File], patterns: &[&str]) -> Vec<&'a File> {
+    patterns
+        .iter()
+        .filter_map(|p| glob::Pattern::new(p).ok())
+        .map(|g| {
+            files
+                .iter()
+                .filter(|f| g.matches(f.file_name()))
+                .collect::<Vec<_>>()
+        })
+        .find(|found| !found.is_empty())
+        .unwrap_or_default()
 }
 
 /// Parses every file with `parse`, turning failures into warnings.
-fn read_all(files: &[PathBuf], parse: fn(&str) -> Result<Vec<Play>>) -> Result<Loaded> {
+fn read_all(files: &[&File], parse: fn(&str) -> Result<Vec<Play>>) -> Loaded {
     let mut loaded = Loaded::default();
     for file in files {
-        match fs::read_to_string(file)
-            .with_context(|| format!("cannot read {}", file.display()))
-            .and_then(|text| parse(&text))
-        {
+        match file.text().and_then(parse) {
             Ok(mut plays) => loaded.plays.append(&mut plays),
             Err(e) => loaded
                 .warnings
-                .push(format!("Spotify: skipping {} ({e:#})", file.display())),
+                .push(format!("Spotify: skipping {} ({e:#})", file.name)),
         }
     }
-    Ok(loaded)
+    loaded
 }
 
 /// Parses an extended history file. Entries without a track name are podcasts,
@@ -235,9 +207,15 @@ mod tests {
         assert_eq!(plays[0].ts.to_rfc3339(), "2025-03-01T21:15:00+00:00");
     }
 
+    fn file(name: &str, text: &str) -> File {
+        File {
+            name: name.into(),
+            bytes: text.as_bytes().to_vec(),
+        }
+    }
+
     #[test]
     fn full_plays_are_only_trackdone() {
-        let dir = tempfile::tempdir().unwrap();
         let entry = |ms: u64, reason: &str| {
             format!(
                 r#"{{"ts":"2025-01-02T10:00:00Z","ms_played":{ms},"master_metadata_track_name":"T","master_metadata_album_artist_name":"A","reason_end":"{reason}"}}"#
@@ -249,17 +227,16 @@ mod tests {
             entry(50_000, "fwdbtn"),
             entry(10_000, "endplay")
         );
-        fs::write(dir.path().join("Streaming_History_Audio_2025.json"), json).unwrap();
-        let plays = full_plays(dir.path()).unwrap();
+        let files = [file("Streaming_History_Audio_2025.json", &json)];
+        let plays = full_plays(&files, "here").unwrap();
         assert_eq!(plays.len(), 1);
         assert_eq!(plays[0].ms_played, 200_000);
     }
 
     #[test]
     fn full_plays_need_the_extended_history() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("StreamingHistory_music_0.json"), "[]").unwrap();
-        let err = full_plays(dir.path()).unwrap_err().to_string();
+        let files = [file("StreamingHistory_music_0.json", "[]")];
+        let err = full_plays(&files, "here").unwrap_err().to_string();
         assert!(err.contains("Extended streaming history"), "{err}");
     }
 }

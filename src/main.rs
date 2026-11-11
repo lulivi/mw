@@ -4,15 +4,6 @@
 //! This is the command line entry point: it parses the arguments, loads the
 //! selected sources, computes the stats, prints them and saves the image.
 
-mod lengths;
-mod model;
-mod musicbrainz;
-mod normalize;
-mod render;
-mod songdb;
-mod sources;
-mod stats;
-
 use std::fs;
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -22,9 +13,10 @@ use chrono::NaiveDate;
 use chrono_tz::Tz;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use model::{Play, Source};
-use render::{fmt_count, fmt_int, minutes, range_label};
-use stats::{Filters, RankBy, Stats};
+use mw::model::{Play, Source};
+use mw::render::{fmt_count, fmt_int};
+use mw::stats::{self, Filters, RankBy};
+use mw::{lengths, musicbrainz, render, songdb, sources, text};
 
 /// Music Wrapped: your listening recap from your Spotify and YouTube Music data exports.
 #[derive(Parser)]
@@ -299,11 +291,12 @@ fn main() -> Result<()> {
         bail!("No plays in that date range.");
     };
 
-    print_stats(&stats);
+    print!("\n{}", text::stats(&stats));
 
     if !cli.no_image {
         let svg = render::build_svg(&stats, rank_by, cli.color.hex())?;
-        render::save_png(&svg, &cli.out)?;
+        let png = render::png(&svg)?;
+        fs::write(&cli.out, png).with_context(|| format!("cannot save {}", cli.out.display()))?;
         println!("\nImage saved to {}", cli.out.display());
     }
     Ok(())
@@ -311,15 +304,32 @@ fn main() -> Result<()> {
 
 /// Loads the Spotify export and reports how many plays were read.
 fn load_spotify(dir: &Path) -> Result<Vec<Play>> {
-    let loaded = sources::spotify::load(dir)?;
+    let loaded = sources::spotify::load(&read_spotify(dir)?, &dir.display().to_string())?;
     report("Spotify", loaded.plays.len(), &loaded.warnings);
     Ok(loaded.plays)
+}
+
+/// Reads the files of the Spotify export at `path` (a folder or a file).
+fn read_spotify(path: &Path) -> Result<Vec<sources::File>> {
+    if !path.exists() {
+        bail!("Spotify path does not exist: {}", path.display());
+    }
+    sources::read_path(path)
+}
+
+/// Reads the YouTube history file.
+fn read_ytm(path: &Path) -> Result<sources::File> {
+    if !path.is_file() {
+        bail!("YouTube Music file does not exist: {}", path.display());
+    }
+    let mut files = sources::read_path(path)?;
+    Ok(files.remove(0))
 }
 
 /// Loads the YouTube Music history and replaces the estimates with the real
 /// lengths in the song database, when it can be read.
 fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Play>> {
-    let mut loaded = sources::ytmusic::load(file, avg_minutes)?;
+    let mut loaded = sources::ytmusic::load(&read_ytm(file)?, avg_minutes)?;
     report("YouTube Music", loaded.plays.len(), &loaded.warnings);
 
     let (db, warnings) = songdb::load(db, songdb::cache_path().as_deref());
@@ -341,7 +351,7 @@ fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Pla
 /// doesn't have to `spotify-durations-<local date and time>.json`, the unverified
 /// ones with a `check`.
 fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
-    let plays = sources::spotify::full_plays(dir)?;
+    let plays = sources::spotify::full_plays(&read_spotify(dir)?, &dir.display().to_string())?;
     let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
     for w in &warnings {
         eprintln!("warning: {w}");
@@ -371,7 +381,7 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
 /// Writes the YouTube Music songs the song database doesn't have to
 /// `ytm-missing-<local date and time>.json`.
 fn export_ytm(file: &Path, origin: songdb::Origin) -> Result<()> {
-    let loaded = sources::ytmusic::load(file, 0.0)?;
+    let loaded = sources::ytmusic::load(&read_ytm(file)?, 0.0)?;
     report("YouTube Music", loaded.plays.len(), &loaded.warnings);
     let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
     for w in &warnings {
@@ -510,82 +520,6 @@ fn report(name: &str, n: usize, warnings: &[String]) {
     eprintln!("{name}: {} loaded", fmt_count(n as u64, "play"));
     for w in warnings {
         eprintln!("  warning: {w}");
-    }
-}
-
-/// Prints the full recap to stdout, including what the image leaves out (every
-/// month, longer top lists and the favorite hour).
-fn print_stats(s: &Stats) {
-    let approx = if s.estimated_ms > 0 { "≈ " } else { "" };
-    println!("\n== {} ==", range_label(s.from, s.to));
-    println!(
-        "Minutes listened: {approx}{}  ({})",
-        fmt_int(minutes(s.total_ms)),
-        fmt_count(s.plays, "play")
-    );
-    if s.estimated_ms > 0 {
-        println!(
-            "  of which estimated (YouTube Music): {}",
-            fmt_int(minutes(s.estimated_ms))
-        );
-    }
-    for (src, ms) in &s.by_source {
-        let pct = *ms as f64 * 100.0 / s.total_ms as f64;
-        println!(
-            "  {}: {} min ({pct:.0}%)",
-            src.label(),
-            fmt_int(minutes(*ms))
-        );
-    }
-
-    match s.by_year() {
-        Some(years) => {
-            println!("\nMinutes per year:");
-            for (y, ms) in years {
-                println!("  {y}  {:>8} min", fmt_int(minutes(ms)));
-            }
-        }
-        None => {
-            println!("\nMinutes per month:");
-            for ((y, m), ms) in &s.by_month {
-                println!("  {y}-{m:02}  {:>8} min", fmt_int(minutes(*ms)));
-            }
-        }
-    }
-
-    println!("\nTop artists:");
-    for (i, a) in s.top_artists.iter().enumerate() {
-        println!(
-            "  {:>2}. {}  ({} min, {})",
-            i + 1,
-            a.name,
-            fmt_int(minutes(a.ms)),
-            fmt_count(a.plays, "play")
-        );
-    }
-    println!("\nTop songs:");
-    for (i, t) in s.top_tracks.iter().enumerate() {
-        let artist = t.detail.as_deref().unwrap_or("");
-        println!(
-            "  {:>2}. {} · {}  ({} min, {})",
-            i + 1,
-            t.name,
-            artist,
-            fmt_int(minutes(t.ms)),
-            fmt_count(t.plays, "play")
-        );
-    }
-
-    println!(
-        "\nDistinct artists: {} · Distinct songs: {}",
-        fmt_int(s.distinct_artists as u64),
-        fmt_int(s.distinct_tracks as u64)
-    );
-    if let Some((day, ms)) = s.top_day {
-        println!("Top day: {day} ({} min)", fmt_int(minutes(ms)));
-    }
-    if let Some((h, _)) = s.top_hour {
-        println!("Favorite hour: {h:02}:00–{:02}:00", (h + 1) % 24);
     }
 }
 
