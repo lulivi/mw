@@ -14,11 +14,12 @@
    sources, the ranking, the color and the time zone (the device's by default).
    This step opens once a file is read. The options are the same as `mw`'s and
    default to the same values, except the time zone.
-3. Press **Create image**, then download it or, on a phone, share it. Under the
-   image, "Stats as text" has what `mw` prints in the terminal.
+3. Press **Create image**, then download it or, on a phone, share it.
 
 On a computer the image stays on the right while you scroll, with a sample in
 its place until the first one is made. On a phone it comes after the options.
+The page follows the device's light or dark theme; the theme button at the top
+switches it, and that choice is kept on the device.
 
 ## Privacy
 

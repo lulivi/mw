@@ -11,8 +11,23 @@ let nextId = 0;
 /** Whether the files added can make an image (they hold a history and agree). */
 let ready = false;
 let imageUrl;
+const smooth = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
 /** Whether the page is one column (a phone), with the image at the end. */
 const oneColumn = matchMedia("(max-width: 899px)");
+
+// Theme: the device's, or light or dark, remembered on this device only.
+const THEMES = { "": "Device", light: "Light", dark: "Dark" };
+const root = document.documentElement;
+const showTheme = () => ($("theme").textContent = `Theme: ${THEMES[root.dataset.theme] ?? "Device"}`);
+$("theme").addEventListener("click", () => {
+  const names = Object.keys(THEMES);
+  root.dataset.theme = names[(names.indexOf(root.dataset.theme ?? "") + 1) % names.length];
+  try {
+    localStorage.setItem("theme", root.dataset.theme);
+  } catch {}
+  showTheme();
+});
+showTheme();
 
 // Time zones, with the device's selected.
 const here = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -134,6 +149,9 @@ worker.onerror = (e) => {
 /** Opens step 2 when the files can make an image, and fills the year list,
  * keeping the year chosen if it's still there. */
 function setReady(value, years) {
+  // With the data read, step 1 shrinks; the first time, bring the options into view.
+  $("data").classList.toggle("has-data", value);
+  if (value && !ready) $("options-title").scrollIntoView({ behavior: smooth() });
   ready = value;
   const chosen = form.year.value;
   form.year.replaceChildren(...years.map((y) => new Option(y, y)));
@@ -142,8 +160,8 @@ function setReady(value, years) {
   $("needs-file").hidden = ready;
 }
 
-/** Shows the image, with its download and share buttons, notes and text. */
-function result({ png, text, notes }) {
+/** Shows the image, with its download and share buttons and notes. */
+function result({ png, notes }) {
   const blob = new Blob([png], { type: "image/png" });
   if (imageUrl) URL.revokeObjectURL(imageUrl);
   imageUrl = URL.createObjectURL(blob);
@@ -156,7 +174,6 @@ function result({ png, text, notes }) {
   $("notes").replaceChildren(
     ...notes.map((n) => Object.assign(document.createElement("li"), { textContent: n })),
   );
-  $("text").textContent = text;
 
   const file = new File([blob], "wrapped.png", { type: "image/png" });
   const share = $("share");
@@ -166,5 +183,5 @@ function result({ png, text, notes }) {
   $("error").hidden = true;
   $("output").hidden = false;
   // On a computer the image is already in view, on the right.
-  if (oneColumn.matches) $("result").scrollIntoView({ behavior: "smooth" });
+  if (oneColumn.matches) $("result").scrollIntoView({ behavior: smooth() });
 }

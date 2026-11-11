@@ -39,8 +39,9 @@
   font: 400 1rem/1.6 "Inter", system-ui, sans-serif;
 }
 
+/* Dark: the device's choice unless the page's theme button says light. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #171b20;
     --fg: #e8eaed;
     --muted: #9aa3ad;
@@ -48,6 +49,16 @@
     --line: #2e353d;
     --error: #ff8a80;
   }
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #171b20;
+  --fg: #e8eaed;
+  --muted: #9aa3ad;
+  --card: #1f242a;
+  --line: #2e353d;
+  --error: #ff8a80;
 }
 
 :root:has([name="color"][value="purple"]:checked) { --accent: #B388FF; }
@@ -94,7 +105,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
     grid-template-columns: minmax(0, 1fr) minmax(26rem, 42vw);
     align-items: start;
   }
-  .content { padding: 4rem 3rem; }
+  .content { padding: 2.5rem 3rem; }
   .stage {
     position: sticky;
     top: 0;
@@ -105,8 +116,20 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   #result-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 }
 
+.theme {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.content { position: relative; width: 100%; container-type: inline-size; }
+@media (min-width: 900px) { .theme { top: 1.5rem; right: 3rem; } }
+
 /* Intro */
-header { margin-bottom: 3rem; }
+header { margin-bottom: 2.5rem; padding-top: 1.5rem; }
 h1 {
   margin: 0 0 1rem;
   font: 400 2.5rem/1.1 "Tiny5 Mono", ui-monospace, monospace;
@@ -116,7 +139,7 @@ h1 {
 .steps {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem 1.5rem;
+  gap: 0.75rem 1rem;
   margin: 0 0 1.5rem;
   padding: 0;
   list-style: none;
@@ -157,7 +180,7 @@ h1 {
 @media (min-width: 900px) { .thumb { display: none; } }
 
 /* Steps */
-section + section { margin-top: 3rem; }
+section + section { margin-top: 2.5rem; }
 h2 { margin: 0 0 1rem; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
 .hint, .status, footer { color: var(--muted); font-size: 0.875rem; }
 .hint { margin: -0.5rem 0 1rem; }
@@ -219,6 +242,11 @@ h2 { margin: 0 0 1rem; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.
 .drop svg { width: 2rem; height: 2rem; margin-bottom: 0.5rem; color: var(--muted); }
 .drop span { color: var(--muted); font-size: 0.875rem; }
 .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.when-ready { display: none; }
+.has-data .help, .has-data .when-empty { display: none; }
+.has-data .when-ready { display: block; }
+.has-data .drop { display: flex; gap: 0.75rem; padding: 0.75rem 1rem; border-width: 1px; }
+.has-data .drop svg { width: 1.25rem; height: 1.25rem; margin: 0; }
 
 /* Files added */
 .files { list-style: none; padding: 0; margin: 1rem 0 0; }
@@ -247,7 +275,7 @@ h2 { margin: 0 0 1rem; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.
 /* Options */
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 legend { padding: 0; margin-bottom: 0.5rem; font-weight: 700; }
-#settings { display: grid; gap: 1.5rem; transition: opacity 150ms ease-out; }
+#settings { display: grid; gap: 1rem; transition: opacity 150ms ease-out; }
 #settings:disabled { opacity: 0.45; }
 #settings:disabled * { cursor: not-allowed; }
 .field { display: grid; gap: 0.5rem; font-weight: 700; }
@@ -263,6 +291,19 @@ select, input[type="date"], button, .primary {
   max-width: 100%;
 }
 .field select { font-weight: 400; }
+@container (min-width: 32rem) {
+  #settings legend {
+    float: left;
+    display: flex;
+    align-items: center;
+    width: 6.5rem;
+    min-height: 3.125rem;
+    margin: 0;
+  }
+  .field { grid-template-columns: 6.5rem 1fr; gap: 0; align-items: center; }
+  .when-year, .when-range { margin-left: 6.5rem; }
+  .colors { min-height: 3.125rem; align-items: center; }
+}
 
 /* Radios drawn as one row of joined buttons. */
 .segmented {
@@ -393,18 +434,6 @@ footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line
 .secondary:hover { background: rgb(255 255 255 / 0.06); }
 .notes { margin: 1rem 0 0; padding-left: 1.25rem; color: var(--stage-muted); font-size: 0.875rem; }
 .notes:empty { display: none; }
-.stats { margin-top: 1rem; text-align: center; }
-.stats summary { cursor: pointer; color: var(--stage-muted); font-size: 0.875rem; }
-.stats pre {
-  overflow-x: auto;
-  margin: 0.5rem 0 0;
-  padding: 1rem;
-  border: 1px solid var(--stage-line);
-  border-radius: var(--radius);
-  background: #161b20;
-  font-size: 0.8125rem;
-  text-align: left;
-}
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
