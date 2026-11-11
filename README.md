@@ -32,13 +32,15 @@ Made from a fictional listening history (2021–2025; YouTube Music from 2024).
 
 Download the latest release into the current directory:
 
+**Linux and macOS**
+
 ```bash
-# Linux and macOS
 curl -fsSL https://raw.githubusercontent.com/lulivi/mw/main/scripts/install.sh | bash
 ```
 
+**Windows (PowerShell)**
+
 ```powershell
-# Windows (PowerShell)
 irm https://raw.githubusercontent.com/lulivi/mw/main/scripts/install.ps1 | iex
 ```
 
