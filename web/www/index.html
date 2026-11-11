@@ -12,22 +12,45 @@
 <body>
 <main>
   <header>
+    <img class="thumb" src="sample.png" alt="" width="1080" height="1920">
     <h1>Music Wrapped</h1>
     <p>Your listening recap, as an image, from your Spotify and YouTube Music data.</p>
-    <p class="privacy">Your files never leave this device: they are read here, in your browser.
-      Nothing is uploaded or stored. The page only downloads its own files and the shared
-      <a href="https://github.com/lulivi/mw/blob/main/data/README.md">song database</a>
-      (song lengths for YouTube Music).</p>
+    <ol class="steps">
+      <li>Request your data</li>
+      <li>Add it here</li>
+      <li>Download your image</li>
+    </ol>
+    <p class="privacy">Your files are read in your browser and never uploaded.
+      <a href="https://github.com/lulivi/mw/blob/main/docs/web.md#privacy">How it works</a></p>
   </header>
 
   <section aria-labelledby="files-title">
     <h2 id="files-title">1. Add your data</h2>
-    <p class="hint">
-      <a href="https://www.spotify.com/account/privacy/">Spotify</a>: the
-      “Extended streaming history” ZIP or its JSON files.
-      <a href="https://takeout.google.com/">Google Takeout</a>: the YouTube history in
-      JSON format (the ZIP, <code>watch-history.json</code> or <code>My Activity.json</code>).
-    </p>
+    <!-- Same steps as README.md, "Prerequisites": change both. -->
+    <details class="help">
+      <summary>How to get your Spotify data (arrives by email, up to 30 days)</summary>
+      <ol>
+        <li>Open <a href="https://www.spotify.com/account/privacy/">spotify.com/account/privacy</a>
+          in a browser (a phone browser works too).</li>
+        <li>Under “Download your data”, tick <strong>Extended streaming history</strong> and
+          click “Request”.</li>
+        <li>Confirm the request from the email Spotify sends you. The ZIP can take up to 30 days.</li>
+        <li>Add the ZIP as is, or its <code>Streaming_History_Audio_*.json</code> files.</li>
+      </ol>
+      <p>The basic history (“Account data”, <code>StreamingHistory_music_*.json</code>) also
+        works, but it only covers the last year.</p>
+    </details>
+    <details class="help">
+      <summary>How to get your YouTube Music data (Google Takeout, in JSON)</summary>
+      <ol>
+        <li>On <a href="https://takeout.google.com/">takeout.google.com</a>, click “Deselect all”
+          and tick only <strong>YouTube and YouTube Music</strong>.</li>
+        <li>Under “All YouTube data included”, keep only <strong>history</strong>.</li>
+        <li>Under “Multiple formats”, change history from HTML to <strong>JSON</strong>.</li>
+        <li>Add the ZIP as is, or <code>watch-history.json</code> from it.
+          <code>My Activity.json</code> from “My Activity” → YouTube works too, under any name.</li>
+      </ol>
+    </details>
     <label id="drop" class="drop">
       <input id="input" type="file" multiple accept=".zip,.json,.html">
       <span>Choose files or drop them here</span>
