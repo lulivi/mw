@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "web"]
+
 [package]
 name = "mw"
 description = "Music Wrapped: your listening recap from your Spotify and YouTube Music data"
@@ -38,3 +41,9 @@ required-features = ["cli"]
 
 [profile.release]
 opt-level = 3
+
+# The web page's WebAssembly (scripts/web.sh): smaller, to download faster.
+[profile.web]
+inherits = "release"
+lto = true
+codegen-units = 1

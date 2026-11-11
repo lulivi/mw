@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Music Wrapped</title>
+  <meta name="description" content="Your listening recap from your Spotify and YouTube Music data, made in your browser.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Music Wrapped</h1>
+    <p>Your listening recap, as an image, from your Spotify and YouTube Music data.</p>
+    <p class="privacy">Your files never leave this device: they are read here, in your browser.
+      Nothing is uploaded or stored. The page only downloads its own files and the shared
+      <a href="https://github.com/lulivi/mw/blob/main/data/README.md">song database</a>
+      (song lengths for YouTube Music).</p>
+  </header>
+
+  <section aria-labelledby="files-title">
+    <h2 id="files-title">1. Add your data</h2>
+    <p class="hint">
+      <a href="https://www.spotify.com/account/privacy/">Spotify</a>: the
+      “Extended streaming history” ZIP or its JSON files.
+      <a href="https://takeout.google.com/">Google Takeout</a>: the YouTube history in
+      JSON format (the ZIP, <code>watch-history.json</code> or <code>My Activity.json</code>).
+    </p>
+    <label id="drop" class="drop">
+      <input id="input" type="file" multiple accept=".zip,.json,.html">
+      <span>Choose files or drop them here</span>
+    </label>
+    <ul id="files" class="files"></ul>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+  </section>
+
+  <section aria-labelledby="options-title">
+    <h2 id="options-title">2. Choose the options</h2>
+    <form id="options">
+      <fieldset>
+        <legend>Period</legend>
+        <label><input type="radio" name="period" value="all" checked> Whole history</label>
+        <label><input type="radio" name="period" value="year"> Year
+          <select id="year" name="year" aria-label="Year" disabled></select></label>
+        <label><input type="radio" name="period" value="range"> From
+          <input id="from" name="from" type="date" aria-label="From" disabled>
+          to <input id="to" name="to" type="date" aria-label="To" disabled></label>
+      </fieldset>
+      <label>Sources
+        <select name="source">
+          <option value="all">All</option>
+          <option value="spotify">Spotify</option>
+          <option value="ytm">YouTube Music</option>
+        </select></label>
+      <label>Rank by
+        <select name="rankBy">
+          <option value="plays">Plays</option>
+          <option value="minutes">Minutes</option>
+        </select></label>
+      <fieldset class="colors">
+        <legend>Color</legend>
+        <label style="--c:#FF6B4A"><input type="radio" name="color" value="orange" checked> Orange</label>
+        <label style="--c:#B388FF"><input type="radio" name="color" value="purple"> Purple</label>
+        <label style="--c:#5AA9FF"><input type="radio" name="color" value="blue"> Blue</label>
+        <label style="--c:#3DDC97"><input type="radio" name="color" value="green"> Green</label>
+        <label style="--c:#FF6FB5"><input type="radio" name="color" value="pink"> Pink</label>
+        <label style="--c:#FF5A5F"><input type="radio" name="color" value="red"> Red</label>
+        <label style="--c:#E3E7EB"><input type="radio" name="color" value="gray"> Gray</label>
+      </fieldset>
+      <label>Time zone
+        <select id="tz" name="tz"></select></label>
+      <button id="create" type="submit" disabled>Create image</button>
+    </form>
+  </section>
+
+  <section id="result" aria-labelledby="result-title" hidden>
+    <h2 id="result-title">3. Your image</h2>
+    <p id="error" class="error" role="alert" hidden></p>
+    <div id="output" hidden>
+      <img id="image" alt="Your listening recap">
+      <div class="actions">
+        <a id="download" class="button" download="wrapped.png">Download</a>
+        <button id="share" type="button" hidden>Share</button>
+      </div>
+      <ul id="notes" class="notes"></ul>
+      <details>
+        <summary>Stats as text</summary>
+        <pre id="text"></pre>
+      </details>
+    </div>
+  </section>
+
+  <footer>
+    <a href="https://github.com/lulivi/mw">mw on GitHub</a>: the same recap from the command line.
+  </footer>
+</main>
+</body>
+</html>

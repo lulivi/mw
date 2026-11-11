@@ -190,15 +190,8 @@ enum ColorArg {
 impl ColorArg {
     /// The color as an SVG hex string.
     fn hex(self) -> &'static str {
-        match self {
-            ColorArg::Orange => "#FF6B4A",
-            ColorArg::Purple => "#B388FF",
-            ColorArg::Blue => "#5AA9FF",
-            ColorArg::Green => "#3DDC97",
-            ColorArg::Pink => "#FF6FB5",
-            ColorArg::Red => "#FF5A5F",
-            ColorArg::Gray => "#E3E7EB",
-        }
+        let value = self.to_possible_value().expect("no color is skipped");
+        render::accent(value.get_name()).expect("every color has an accent")
     }
 }
 

@@ -3,4 +3,4 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-cargo test "$@"
+cargo test --workspace "$@"

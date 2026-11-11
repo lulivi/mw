@@ -21,6 +21,25 @@ const FONT_BOLD: &[u8] = include_bytes!("../assets/Inter-Bold.otf");
 /// used only for the main figure. Its pixel rows are crisp at multiples of 8 px.
 const FONT_NUMBER: &[u8] = include_bytes!("../assets/Tiny5Mono-Regular.otf");
 
+/// Accent colors of the image (`--color`), by name, as SVG hex strings.
+pub const ACCENTS: [(&str, &str); 7] = [
+    ("orange", "#FF6B4A"),
+    ("purple", "#B388FF"),
+    ("blue", "#5AA9FF"),
+    ("green", "#3DDC97"),
+    ("pink", "#FF6FB5"),
+    ("red", "#FF5A5F"),
+    ("gray", "#E3E7EB"),
+];
+
+/// The accent color with this name.
+pub fn accent(name: &str) -> Option<&'static str> {
+    ACCENTS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, hex)| *hex)
+}
+
 /// Image width in px.
 const W: f32 = 1080.0;
 /// Image height in px.

@@ -834,6 +834,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mw-web"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "chrono-tz",
+ "mw",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "nix"
 version = "0.31.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

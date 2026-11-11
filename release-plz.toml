@@ -1,3 +1,8 @@
 [workspace]
 # No crates.io: take the last version from git tags, and tag/release publish = false packages.
 git_only = true
+
+# The web page is published with mw's releases, not on its own.
+[[package]]
+name = "mw-web"
+release = false
