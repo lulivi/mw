@@ -12,6 +12,8 @@ let nextId = 0;
 let ready = false;
 let busy = false;
 let imageUrl;
+/** Whether the page is one column (a phone), with the image at the end. */
+const oneColumn = matchMedia("(max-width: 899px)");
 
 // Time zones, with the device's selected.
 const here = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -128,8 +130,6 @@ worker.onmessage = ({ data: msg }) => {
   } else if (msg.type === "error") {
     setBusy(false);
     $("status").textContent = "";
-    $("result").hidden = false;
-    $("output").hidden = true;
     $("error").hidden = false;
     $("error").textContent = msg.message;
   }
@@ -159,7 +159,11 @@ function result({ png, text, notes }) {
   const blob = new Blob([png], { type: "image/png" });
   if (imageUrl) URL.revokeObjectURL(imageUrl);
   imageUrl = URL.createObjectURL(blob);
-  $("image").src = imageUrl;
+  const image = $("image");
+  image.src = imageUrl;
+  image.alt = "Your listening recap";
+  image.classList.remove("placeholder");
+  $("caption").hidden = true;
   $("download").href = imageUrl;
   $("notes").replaceChildren(
     ...notes.map((n) => Object.assign(document.createElement("li"), { textContent: n })),
@@ -173,6 +177,6 @@ function result({ png, text, notes }) {
 
   $("error").hidden = true;
   $("output").hidden = false;
-  $("result").hidden = false;
-  $("result").scrollIntoView({ behavior: "smooth" });
+  // On a computer the image is already in view, on the right.
+  if (oneColumn.matches) $("result").scrollIntoView({ behavior: "smooth" });
 }
