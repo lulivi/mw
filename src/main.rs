@@ -29,8 +29,8 @@ struct Cli {
     #[arg(long, value_name = "DIR")]
     spotify: Option<PathBuf>,
 
-    /// Path to watch-history.json from Google Takeout
-    #[arg(long, value_name = "FILE")]
+    /// Folder (or file) with the YouTube history from Google Takeout (watch-history.json or My Activity.json)
+    #[arg(long, value_name = "PATH")]
     ytm: Option<PathBuf>,
 
     /// Sources included in the stats
@@ -126,8 +126,8 @@ enum DbCommand {
 
     /// Write the YouTube Music songs the song database doesn't have to a file you can share, without your listening history
     ExportYtm {
-        /// Path to watch-history.json from Google Takeout
-        #[arg(long, value_name = "FILE")]
+        /// Folder (or file) with the YouTube history from Google Takeout (watch-history.json or My Activity.json)
+        #[arg(long, value_name = "PATH")]
         ytm: PathBuf,
 
         #[command(flatten)]
@@ -303,35 +303,44 @@ fn main() -> Result<()> {
 }
 
 /// Loads the Spotify export and reports how many plays were read.
-fn load_spotify(dir: &Path) -> Result<Vec<Play>> {
-    let loaded = sources::spotify::load(&read_spotify(dir)?, &dir.display().to_string())?;
+fn load_spotify(path: &Path) -> Result<Vec<Play>> {
+    let found = sources::read(&read_path(path, "Spotify")?, 0.0)?;
+    let Some(loaded) = found.spotify else {
+        bail!(
+            "No Spotify files found in {}. Looking for Streaming_History_Audio_*.json (extended history) or StreamingHistory_music_*.json.",
+            path.display()
+        );
+    };
     report("Spotify", loaded.plays.len(), &loaded.warnings);
     Ok(loaded.plays)
 }
 
-/// Reads the files of the Spotify export at `path` (a folder or a file).
-fn read_spotify(path: &Path) -> Result<Vec<sources::File>> {
+/// Reads the files at `path` (a folder or a file) of the `service` export.
+fn read_path(path: &Path, service: &str) -> Result<Vec<sources::File>> {
     if !path.exists() {
-        bail!("Spotify path does not exist: {}", path.display());
+        bail!("{service} path does not exist: {}", path.display());
     }
     sources::read_path(path)
 }
 
-/// Reads the YouTube history file.
-fn read_ytm(path: &Path) -> Result<sources::File> {
-    if !path.is_file() {
-        bail!("YouTube Music file does not exist: {}", path.display());
-    }
-    let mut files = sources::read_path(path)?;
-    Ok(files.remove(0))
+/// Reads the YouTube history at `path` (a folder or a file), counting each
+/// YouTube Music play as `avg_minutes`.
+fn read_ytm(path: &Path, avg_minutes: f64) -> Result<sources::Loaded> {
+    let found = sources::read(&read_path(path, "YouTube Music")?, avg_minutes)?;
+    let Some(loaded) = found.youtube else {
+        bail!(
+            "No YouTube history found in {}. Looking for watch-history.json or My Activity.json from Google Takeout, in JSON format.",
+            path.display()
+        );
+    };
+    report("YouTube Music", loaded.plays.len(), &loaded.warnings);
+    Ok(loaded)
 }
 
 /// Loads the YouTube Music history and replaces the estimates with the real
 /// lengths in the song database, when it can be read.
-fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Play>> {
-    let mut loaded = sources::ytmusic::load(&read_ytm(file)?, avg_minutes)?;
-    report("YouTube Music", loaded.plays.len(), &loaded.warnings);
-
+fn load_ytm(path: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Play>> {
+    let mut loaded = read_ytm(path, avg_minutes)?;
     let (db, warnings) = songdb::load(db, songdb::cache_path().as_deref());
     if let Some(db) = db {
         let matched = songdb::apply(&mut loaded.plays, &db);
@@ -351,7 +360,8 @@ fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Pla
 /// doesn't have to `spotify-durations-<local date and time>.json`, the unverified
 /// ones with a `check`.
 fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
-    let plays = sources::spotify::full_plays(&read_spotify(dir)?, &dir.display().to_string())?;
+    let plays =
+        sources::spotify::full_plays(&read_path(dir, "Spotify")?, &dir.display().to_string())?;
     let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
     for w in &warnings {
         eprintln!("warning: {w}");
@@ -381,8 +391,7 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
 /// Writes the YouTube Music songs the song database doesn't have to
 /// `ytm-missing-<local date and time>.json`.
 fn export_ytm(file: &Path, origin: songdb::Origin) -> Result<()> {
-    let loaded = sources::ytmusic::load(&read_ytm(file)?, 0.0)?;
-    report("YouTube Music", loaded.plays.len(), &loaded.warnings);
+    let loaded = read_ytm(file, 0.0)?;
     let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
     for w in &warnings {
         eprintln!("warning: {w}");

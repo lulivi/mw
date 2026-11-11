@@ -1,14 +1,14 @@
 //! Reader for Spotify's data export.
 //!
-//! Prefers the "Extended streaming history" (`Streaming_History_Audio_*.json`).
-//! If it's not there, falls back to the basic history from "Account data"
-//! (`StreamingHistory_music_*.json`), which only covers the last year.
+//! Reads the extended history (`Streaming_History_Audio_*.json`) and the basic
+//! history from "Account data" (`StreamingHistory_music_*.json`), which only
+//! covers the last year. Files are told apart by their contents, not their names.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::Deserialize;
 
-use super::{File, Loaded};
+use super::File;
 use crate::model::{Play, Source};
 use crate::normalize::clean_artist;
 
@@ -16,7 +16,6 @@ use crate::normalize::clean_artist;
 #[derive(Deserialize)]
 struct ExtendedEntry {
     ts: String,
-    #[serde(default)]
     ms_played: u64,
     master_metadata_track_name: Option<String>,
     master_metadata_album_artist_name: Option<String>,
@@ -33,100 +32,44 @@ struct BasicEntry {
     end_time: String,
     artist_name: Option<String>,
     track_name: Option<String>,
-    #[serde(default)]
     ms_played: u64,
-}
-
-/// Loads the plays from the files of an export, preferring the extended history
-/// over the basic one. `place` says where the files come from, for messages.
-///
-/// Fails if none of the files is a Spotify history. A file that can't be read
-/// or parsed is skipped with a warning.
-pub fn load(files: &[File], place: &str) -> Result<Loaded> {
-    let extended = find(files, &["Streaming_History_Audio_*.json"]);
-    if !extended.is_empty() {
-        return Ok(read_all(&extended, parse_extended));
-    }
-
-    let basic = find(
-        files,
-        &["StreamingHistory_music_*.json", "StreamingHistory*.json"],
-    );
-    if !basic.is_empty() {
-        let mut loaded = read_all(&basic, parse_basic);
-        loaded.warnings.push(
-            "Spotify: using the basic history (last year only). Request the \"Extended streaming history\" to get everything."
-                .into(),
-        );
-        return Ok(loaded);
-    }
-
-    bail!(
-        "No Spotify files found in {place}. Looking for Streaming_History_Audio_*.json (extended history) or StreamingHistory_music_*.json."
-    )
 }
 
 /// Loads only the full plays (those that reached the end of the song) from the
 /// extended history. Fails if there is none: the basic history doesn't say how a
-/// play ended.
+/// play ended. `place` says where the files come from, for messages.
 pub fn full_plays(files: &[File], place: &str) -> Result<Vec<Play>> {
-    let files = find(files, &["Streaming_History_Audio_*.json"]);
-    if files.is_empty() {
+    let histories: Vec<_> = files
+        .iter()
+        .filter_map(|f| parse_entries(f.text().ok()?))
+        .collect();
+    if histories.is_empty() {
         bail!(
             "Spotify song lengths need the Extended streaming history (Streaming_History_Audio_*.json) in {place}; the basic history doesn't say whether a play reached the end"
         );
     }
-    let mut plays = vec![];
-    for file in files {
-        let entries = parse_entries(file.text()?).with_context(|| format!("in {}", file.name))?;
-        plays.extend(
-            entries
-                .into_iter()
-                .filter(|(_, reason)| reason.as_deref() == Some("trackdone"))
-                .map(|(p, _)| p),
-        );
-    }
-    Ok(plays)
-}
-
-/// The files whose name matches the first of the patterns that matches any.
-fn find<'a>(files: &'a [File], patterns: &[&str]) -> Vec<&'a File> {
-    patterns
-        .iter()
-        .filter_map(|p| glob::Pattern::new(p).ok())
-        .map(|g| {
-            files
-                .iter()
-                .filter(|f| g.matches(f.file_name()))
-                .collect::<Vec<_>>()
-        })
-        .find(|found| !found.is_empty())
-        .unwrap_or_default()
-}
-
-/// Parses every file with `parse`, turning failures into warnings.
-fn read_all(files: &[&File], parse: fn(&str) -> Result<Vec<Play>>) -> Loaded {
-    let mut loaded = Loaded::default();
-    for file in files {
-        match file.text().and_then(parse) {
-            Ok(mut plays) => loaded.plays.append(&mut plays),
-            Err(e) => loaded
-                .warnings
-                .push(format!("Spotify: skipping {} ({e:#})", file.name)),
-        }
-    }
-    loaded
+    Ok(histories
+        .into_iter()
+        .flatten()
+        .filter(|(_, reason)| reason.as_deref() == Some("trackdone"))
+        .map(|(p, _)| p)
+        .collect())
 }
 
 /// Parses an extended history file. Entries without a track name are podcasts,
-/// audiobooks or empty, and are ignored.
-fn parse_extended(text: &str) -> Result<Vec<Play>> {
-    Ok(parse_entries(text)?.into_iter().map(|(p, _)| p).collect())
+/// audiobooks or empty, and are ignored. `None` when the text isn't an extended
+/// history, or holds no entries.
+pub(crate) fn parse_extended(text: &str) -> Option<Vec<Play>> {
+    Some(parse_entries(text)?.into_iter().map(|(p, _)| p).collect())
 }
 
-/// Parses an extended history file into plays with their `reason_end`.
-fn parse_entries(text: &str) -> Result<Vec<(Play, Option<String>)>> {
-    let entries: Vec<ExtendedEntry> = serde_json::from_str(text).context("invalid JSON")?;
+/// Parses an extended history file into plays with their `reason_end`, as
+/// [`parse_extended`] does.
+fn parse_entries(text: &str) -> Option<Vec<(Play, Option<String>)>> {
+    let entries: Vec<ExtendedEntry> = serde_json::from_str(text).ok()?;
+    if entries.is_empty() {
+        return None;
+    }
     let plays = entries
         .into_iter()
         .filter_map(|e| {
@@ -151,12 +94,16 @@ fn parse_entries(text: &str) -> Result<Vec<(Play, Option<String>)>> {
             Some((play, e.reason_end))
         })
         .collect();
-    Ok(plays)
+    Some(plays)
 }
 
-/// Parses a basic history file, ignoring entries without a known artist.
-fn parse_basic(text: &str) -> Result<Vec<Play>> {
-    let entries: Vec<BasicEntry> = serde_json::from_str(text).context("invalid JSON")?;
+/// Parses a basic history file, ignoring entries without a known artist (such
+/// as podcasts). `None` when the text isn't a basic history, or holds no entries.
+pub(crate) fn parse_basic(text: &str) -> Option<Vec<Play>> {
+    let entries: Vec<BasicEntry> = serde_json::from_str(text).ok()?;
+    if entries.is_empty() {
+        return None;
+    }
     let plays = entries
         .into_iter()
         .filter_map(|e| {
@@ -180,7 +127,7 @@ fn parse_basic(text: &str) -> Result<Vec<Play>> {
             })
         })
         .collect();
-    Ok(plays)
+    Some(plays)
 }
 
 #[cfg(test)]

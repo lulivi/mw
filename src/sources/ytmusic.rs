@@ -1,15 +1,14 @@
-//! Reader for the YouTube history from Google Takeout (`watch-history.json`).
+//! Reader for the YouTube history from Google Takeout (`watch-history.json` or
+//! `My Activity.json`, under any name: it's told apart by its contents).
 //!
 //! Only YouTube Music entries are kept. The history doesn't say how long each
 //! song was played, so every play counts as `avg_minutes`.
 
 use std::collections::BTreeSet;
 
-use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-use super::{File, Loaded};
 use crate::model::{Play, Source};
 use crate::normalize::{clean_artist, strip_artist_prefix};
 
@@ -48,35 +47,29 @@ const PREFIXES: &[&str] = &[
 /// Equivalent suffixes for languages that put the verb last.
 const SUFFIXES: &[&str] = &[" angesehen", " bekeken"];
 
-/// Loads the plays from `watch-history.json`, counting each as `avg_minutes`.
-///
-/// Fails if the file is the HTML export or isn't valid JSON.
-pub fn load(file: &File, avg_minutes: f64) -> Result<Loaded> {
-    if file.name.ends_with(".html") {
-        bail!(
-            "{} is HTML. In Google Takeout, choose JSON as the format for the YouTube history.",
-            file.name
-        );
-    }
-    let plays =
-        parse(file.text()?, avg_minutes).with_context(|| format!("cannot parse {}", file.name))?;
-    let mut loaded = Loaded {
-        plays,
-        warnings: vec![],
-    };
-    if loaded.plays.is_empty() {
-        loaded
-            .warnings
-            .push("YouTube Music: the file has no YouTube Music entries.".into());
-    }
-    Ok(loaded)
+/// Is this the HTML export of the YouTube history, which this reader can't read?
+pub(crate) fn is_html(text: &str) -> bool {
+    text.contains("outer-cell") && text.contains("youtube.com/watch")
 }
 
-/// Parses the history, keeping YouTube Music entries with a known song and artist.
-/// An entry without a subtitle is a deleted video or has no channel, so its artist
-/// is unknown and it's dropped.
-fn parse(text: &str, avg_minutes: f64) -> Result<Vec<Play>> {
-    let entries: Vec<Entry> = serde_json::from_str(text).context("invalid JSON")?;
+/// The message for the HTML export.
+pub(crate) fn html_error(name: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{name} is HTML. In Google Takeout, choose JSON as the format for the YouTube history."
+    )
+}
+
+/// Parses the history, keeping YouTube Music entries with a known song and
+/// artist, each counting as `avg_minutes`. An entry without a subtitle is a
+/// deleted video or has no channel, so its artist is unknown and it's dropped.
+///
+/// `None` when the text isn't a YouTube history: one with an entry from YouTube
+/// or YouTube Music that links to it, whatever the file's name.
+pub(crate) fn parse(text: &str, avg_minutes: f64) -> Option<Vec<Play>> {
+    let entries: Vec<Entry> = serde_json::from_str(text).ok()?;
+    if !entries.iter().any(is_youtube) {
+        return None;
+    }
     let ms = (avg_minutes.max(0.0) * 60_000.0).round() as u64;
     let entries: Vec<Entry> = entries.into_iter().filter(is_music).collect();
     let wording = detect_wording(&entries);
@@ -105,7 +98,15 @@ fn parse(text: &str, avg_minutes: f64) -> Result<Vec<Play>> {
             })
         })
         .collect();
-    Ok(plays)
+    Some(plays)
+}
+
+/// Is this entry from the YouTube history?
+fn is_youtube(e: &Entry) -> bool {
+    matches!(e.header.as_deref(), Some("YouTube" | "YouTube Music"))
+        && e.title_url
+            .as_deref()
+            .is_some_and(|u| u.contains("youtube.com/"))
 }
 
 /// Extracts the video ID from `https://music.youtube.com/watch?v=XXXXXXXXXXX&...`.
