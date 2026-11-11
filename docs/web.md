@@ -6,15 +6,19 @@
 ## Using it
 
 1. Add your data: the ZIP Spotify or Google Takeout sends, or the JSON files in
-   it. Each file is read as soon as it's added, and the list says what it holds
-   (or that it holds nothing to use). Files over 500 MB are refused; a phone
-   would run out of memory.
+   it. The two "How to get your … data" sections under this step say how to
+   request them. Each file is read as soon as it's added, and the list says
+   what it holds (or that it holds nothing to use). Files over 500 MB are
+   refused; a phone would run out of memory.
 2. Choose the options: the period (whole history, a year or a date range), the
    sources, the ranking, the color and the time zone (the device's by default).
-   They're the same as `mw`'s options and default to the same values, except
-   the time zone.
+   This step opens once a file is read. The options are the same as `mw`'s and
+   default to the same values, except the time zone.
 3. Press **Create image**, then download it or, on a phone, share it. Under the
    image, "Stats as text" has what `mw` prints in the terminal.
+
+On a computer the image stays on the right while you scroll, with a sample in
+its place until the first one is made. On a phone it comes after the options.
 
 ## Privacy
 
