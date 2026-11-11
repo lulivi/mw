@@ -21,6 +21,11 @@ struct Entry {
     title_url: Option<String>,
     subtitles: Option<Vec<Subtitle>>,
     time: Option<String>,
+    /// The settings that saved the entry ("YouTube watch history" for a
+    /// watch). Recent exports have it; likes and shares in `My Activity.json`
+    /// don't.
+    #[serde(rename = "activityControls")]
+    activity_controls: Option<Vec<String>>,
 }
 
 /// A subtitle of an [`Entry`]; the first one holds the channel.
@@ -71,7 +76,12 @@ pub(crate) fn parse(text: &str, avg_minutes: f64) -> Option<Vec<Play>> {
         return None;
     }
     let ms = (avg_minutes.max(0.0) * 60_000.0).round() as u64;
-    let entries: Vec<Entry> = entries.into_iter().filter(is_music).collect();
+    // A file that says what saved each entry: only watches have a setting.
+    let controls = entries.iter().any(|e| e.activity_controls.is_some());
+    let entries: Vec<Entry> = entries
+        .into_iter()
+        .filter(|e| is_music(e) && (!controls || e.activity_controls.is_some()))
+        .collect();
     let wording = detect_wording(&entries);
     let plays = entries
         .into_iter()
@@ -233,6 +243,18 @@ mod tests {
         assert_eq!(plays[0].artist, "ROSALÍA");
         assert_eq!(plays[0].ms_played, 210_000);
         assert!(plays[0].estimated);
+    }
+
+    #[test]
+    fn skips_likes_and_shares_of_my_activity() {
+        let json = r#"[
+          {"header":"YouTube Music","title":"Watched T","titleUrl":"https://music.youtube.com/watch?v=1","subtitles":[{"name":"A"}],"time":"2025-02-01T20:00:00Z","activityControls":["YouTube watch history"]},
+          {"header":"YouTube","title":"Shared video","titleUrl":"https://music.youtube.com/watch?v=1","subtitles":[{"name":"Shared URL: x"},{"name":"T"}],"time":"2025-02-01T20:01:00Z"},
+          {"header":"YouTube","title":"Liked T","titleUrl":"https://music.youtube.com/watch?v=1","subtitles":[{"name":"A"}],"time":"2025-02-01T20:02:00Z"}
+        ]"#;
+        let plays = parse(json, 3.5).unwrap();
+        assert_eq!(plays.len(), 1);
+        assert_eq!(plays[0].track, "T");
     }
 
     /// A history with one YouTube Music entry per title, plus a removed video.
