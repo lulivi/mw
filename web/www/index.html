@@ -73,26 +73,26 @@
             <input id="from" name="from" type="date" aria-label="From" disabled>
             to <input id="to" name="to" type="date" aria-label="To" disabled></label>
         </fieldset>
-        <label>Sources
-          <select name="source">
-            <option value="all">All</option>
-            <option value="spotify">Spotify</option>
-            <option value="ytm">YouTube Music</option>
-          </select></label>
-        <label>Rank by
-          <select name="rankBy">
-            <option value="plays">Plays</option>
-            <option value="minutes">Minutes</option>
-          </select></label>
+        <fieldset class="segmented">
+          <legend>Sources</legend>
+          <label><input type="radio" name="source" value="all" checked><span>All</span></label>
+          <label><input type="radio" name="source" value="spotify"><span>Spotify</span></label>
+          <label><input type="radio" name="source" value="ytm"><span>YouTube Music</span></label>
+        </fieldset>
+        <fieldset class="segmented">
+          <legend>Rank by</legend>
+          <label><input type="radio" name="rankBy" value="plays" checked><span>Plays</span></label>
+          <label><input type="radio" name="rankBy" value="minutes"><span>Minutes</span></label>
+        </fieldset>
         <fieldset class="colors">
           <legend>Color</legend>
-          <label style="--c:#FF6B4A"><input type="radio" name="color" value="orange" checked> Orange</label>
-          <label style="--c:#B388FF"><input type="radio" name="color" value="purple"> Purple</label>
-          <label style="--c:#5AA9FF"><input type="radio" name="color" value="blue"> Blue</label>
-          <label style="--c:#3DDC97"><input type="radio" name="color" value="green"> Green</label>
-          <label style="--c:#FF6FB5"><input type="radio" name="color" value="pink"> Pink</label>
-          <label style="--c:#FF5A5F"><input type="radio" name="color" value="red"> Red</label>
-          <label style="--c:#E3E7EB"><input type="radio" name="color" value="gray"> Gray</label>
+          <label style="--c:#FF6B4A"><input type="radio" name="color" value="orange" checked><span class="visually-hidden">Orange</span></label>
+          <label style="--c:#B388FF"><input type="radio" name="color" value="purple"><span class="visually-hidden">Purple</span></label>
+          <label style="--c:#5AA9FF"><input type="radio" name="color" value="blue"><span class="visually-hidden">Blue</span></label>
+          <label style="--c:#3DDC97"><input type="radio" name="color" value="green"><span class="visually-hidden">Green</span></label>
+          <label style="--c:#FF6FB5"><input type="radio" name="color" value="pink"><span class="visually-hidden">Pink</span></label>
+          <label style="--c:#FF5A5F"><input type="radio" name="color" value="red"><span class="visually-hidden">Red</span></label>
+          <label style="--c:#E3E7EB"><input type="radio" name="color" value="gray"><span class="visually-hidden">Gray</span></label>
         </fieldset>
         <label>Time zone
           <select id="tz" name="tz"></select></label>

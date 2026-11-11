@@ -5,7 +5,9 @@
   --muted: #5f6368;
   --card: #ffffff;
   --line: #d9d9d6;
-  --accent: #e8553a;
+  /* The color chosen for the image; light enough for dark text on it. */
+  --accent: #FF6B4A;
+  --on-accent: #1c1c1e;
   --error: #c62828;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
@@ -18,10 +20,17 @@
     --muted: #a0a4aa;
     --card: #1b1c1f;
     --line: #34363a;
-    --accent: #ff6b4a;
     --error: #ff8a80;
   }
 }
+
+/* The page takes the color chosen for the image. */
+:root:has([name="color"][value="purple"]:checked) { --accent: #B388FF; }
+:root:has([name="color"][value="blue"]:checked) { --accent: #5AA9FF; }
+:root:has([name="color"][value="green"]:checked) { --accent: #3DDC97; }
+:root:has([name="color"][value="pink"]:checked) { --accent: #FF6FB5; }
+:root:has([name="color"][value="red"]:checked) { --accent: #FF5A5F; }
+:root:has([name="color"][value="gray"]:checked) { --accent: #E3E7EB; }
 
 * { box-sizing: border-box; }
 
@@ -56,9 +65,26 @@ main {
   }
 }
 
-h1 { margin: 0 0 0.25rem; font-size: 2rem; }
-h2 { font-size: 1.15rem; margin: 2rem 0 0.75rem; }
-a { color: var(--accent); }
+h1 {
+  margin: 0 0 0.5rem;
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+h2 { font-size: 1.25rem; margin: 1.5rem 0 1rem; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+/* Hidden but still read by screen readers. */
+.visually-hidden, .segmented input, .colors input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 code { font-size: 0.9em; }
 
 .steps {
@@ -83,6 +109,7 @@ code { font-size: 0.9em; }
 .help { margin: 0 0 0.5rem; }
 .help ol { padding-left: 1.25rem; }
 
+footer { margin-top: 1.5rem; }
 .privacy, .hint, footer {
   color: var(--muted);
   font-size: 0.9rem;
@@ -97,7 +124,8 @@ code { font-size: 0.9em; }
   text-align: center;
   cursor: pointer;
 }
-.drop.over, .drop:focus-within { border-color: var(--accent); }
+.drop.over { border-color: var(--accent); }
+.drop:has(:focus-visible) { outline: 2px solid var(--fg); outline-offset: 2px; }
 .drop input {
   position: absolute;
   width: 1px;
@@ -108,13 +136,13 @@ code { font-size: 0.9em; }
 .files {
   list-style: none;
   padding: 0;
-  margin: 0.75rem 0 0;
+  margin: 0.5rem 0 0;
 }
 .files > li {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0 0.5rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.5rem 1rem;
   margin-bottom: 0.5rem;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -129,31 +157,25 @@ code { font-size: 0.9em; }
   font-size: 0.9rem;
 }
 
-.status { min-height: 1.5em; color: var(--muted); }
+.status { min-height: 1.5em; margin: 0.5rem 0 0; color: var(--muted); }
 .error { color: var(--error); }
 
 form { display: grid; gap: 1rem; }
 fieldset {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 0.5rem 0.75rem 0.75rem;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
   align-items: center;
 }
-legend { padding: 0 0.25rem; font-weight: 600; }
+legend { padding: 0; margin-bottom: 0.5rem; font-weight: 600; }
 /* Holds all of step 2, to disable it at once: no box of its own. */
-#settings {
-  border: 0;
-  padding: 0;
-  margin: 0;
-  min-width: 0;
-  display: grid;
-  gap: 1rem;
-}
+#settings { display: grid; gap: 1.5rem; }
 #settings:disabled { opacity: 0.5; }
-#settings > label { display: grid; gap: 0.25rem; font-weight: 600; }
+#settings > label { display: grid; gap: 0.5rem; font-weight: 600; }
 
 select, input[type="date"], button, .button {
   font: inherit;
@@ -165,25 +187,43 @@ select, input[type="date"], button, .button {
   max-width: 100%;
 }
 
-.colors label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
+/* Radios drawn as one row of joined buttons. */
+.segmented { gap: 0; }
+.segmented span {
+  display: block;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--line);
+  background: var(--card);
+  cursor: pointer;
 }
-.colors label::before {
-  content: "";
-  width: 1rem;
-  height: 1rem;
+.segmented label + label span { margin-left: -1px; }
+.segmented label:first-of-type span { border-radius: 8px 0 0 8px; }
+.segmented label:last-of-type span { border-radius: 0 8px 8px 0; }
+.segmented label:has(:checked) span {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.segmented label:has(:focus-visible) span { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+/* Radios drawn as swatches of the image's colors; the names are for screen readers. */
+.colors { gap: 0.5rem; }
+.colors label {
+  width: 2rem;
+  height: 2rem;
   border-radius: 50%;
   background: var(--c);
-  order: 1;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15);
+  cursor: pointer;
 }
-.colors input { accent-color: var(--c); }
+.colors label:has(:checked) { outline: 2px solid var(--fg); outline-offset: 2px; }
+.colors label:has(:focus-visible) { outline: 2px dashed var(--fg); outline-offset: 2px; }
 
 button[type="submit"], .button {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
   cursor: pointer;
   text-decoration: none;
@@ -226,7 +266,7 @@ button[type="submit"], .button {
 @keyframes appear { from { opacity: 0.35; } }
 .actions {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
   justify-content: center;
   margin: 1rem 0;
 }
@@ -236,7 +276,7 @@ details { margin-top: 1rem; }
 summary { cursor: pointer; font-weight: 600; }
 pre {
   overflow-x: auto;
-  padding: 0.75rem;
+  padding: 1rem;
   border-radius: 8px;
   background: var(--card);
   border: 1px solid var(--line);
