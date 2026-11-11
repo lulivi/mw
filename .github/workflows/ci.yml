@@ -16,9 +16,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: ./scripts/lint.sh
       - run: ./scripts/test.sh
+      - run: cargo build -p mw-web --target wasm32-unknown-unknown
 
   release-pr:
     if: github.event_name == 'push'
@@ -45,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      released: ${{ steps.release-plz.outputs.releases_created }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -63,3 +67,30 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ fromJSON(steps.release-plz.outputs.releases)[0].tag }}
+
+  # Publishes the web page with each release.
+  pages:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install the wasm-bindgen-cli that matches Cargo.lock
+        run: cargo install wasm-bindgen-cli --locked --version "$(cargo pkgid -p wasm-bindgen | sed 's/.*@//')"
+      - run: ./scripts/web.sh
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: target/web
+      - id: deploy
+        uses: actions/deploy-pages@v5

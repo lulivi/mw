@@ -4,15 +4,6 @@
 //! This is the command line entry point: it parses the arguments, loads the
 //! selected sources, computes the stats, prints them and saves the image.
 
-mod lengths;
-mod model;
-mod musicbrainz;
-mod normalize;
-mod render;
-mod songdb;
-mod sources;
-mod stats;
-
 use std::fs;
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -22,9 +13,10 @@ use chrono::NaiveDate;
 use chrono_tz::Tz;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use model::{Play, Source};
-use render::{fmt_count, fmt_int, minutes, range_label};
-use stats::{Filters, RankBy, Stats};
+use mw::model::{Play, Source};
+use mw::render::{fmt_count, fmt_int};
+use mw::stats::{self, Filters, RankBy};
+use mw::{lengths, musicbrainz, render, songdb, sources, text};
 
 /// Music Wrapped: your listening recap from your Spotify and YouTube Music data exports.
 #[derive(Parser)]
@@ -33,12 +25,12 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
+    /// Folder, ZIP or file with Spotify's Streaming_History_Audio_*.json files
     #[arg(long, value_name = "DIR")]
     spotify: Option<PathBuf>,
 
-    /// Path to watch-history.json from Google Takeout
-    #[arg(long, value_name = "FILE")]
+    /// Folder, ZIP or file with the YouTube history from Google Takeout (watch-history.json or My Activity.json)
+    #[arg(long, value_name = "PATH")]
     ytm: Option<PathBuf>,
 
     /// Sources included in the stats
@@ -124,7 +116,7 @@ enum Command {
 enum DbCommand {
     /// Write the song lengths of your Spotify full plays to a file you can share, without your listening history
     ExportSpotify {
-        /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
+        /// Folder, ZIP or file with Spotify's Streaming_History_Audio_*.json files
         #[arg(long, value_name = "DIR")]
         spotify: PathBuf,
 
@@ -134,8 +126,8 @@ enum DbCommand {
 
     /// Write the YouTube Music songs the song database doesn't have to a file you can share, without your listening history
     ExportYtm {
-        /// Path to watch-history.json from Google Takeout
-        #[arg(long, value_name = "FILE")]
+        /// Folder, ZIP or file with the YouTube history from Google Takeout (watch-history.json or My Activity.json)
+        #[arg(long, value_name = "PATH")]
         ytm: PathBuf,
 
         #[command(flatten)]
@@ -198,15 +190,8 @@ enum ColorArg {
 impl ColorArg {
     /// The color as an SVG hex string.
     fn hex(self) -> &'static str {
-        match self {
-            ColorArg::Orange => "#FF6B4A",
-            ColorArg::Purple => "#B388FF",
-            ColorArg::Blue => "#5AA9FF",
-            ColorArg::Green => "#3DDC97",
-            ColorArg::Pink => "#FF6FB5",
-            ColorArg::Red => "#FF5A5F",
-            ColorArg::Gray => "#E3E7EB",
-        }
+        let value = self.to_possible_value().expect("no color is skipped");
+        render::accent(value.get_name()).expect("every color has an accent")
     }
 }
 
@@ -299,29 +284,56 @@ fn main() -> Result<()> {
         bail!("No plays in that date range.");
     };
 
-    print_stats(&stats);
+    print!("\n{}", text::stats(&stats));
 
     if !cli.no_image {
         let svg = render::build_svg(&stats, rank_by, cli.color.hex())?;
-        render::save_png(&svg, &cli.out)?;
+        let png = render::png(&svg)?;
+        fs::write(&cli.out, png).with_context(|| format!("cannot save {}", cli.out.display()))?;
         println!("\nImage saved to {}", cli.out.display());
     }
     Ok(())
 }
 
 /// Loads the Spotify export and reports how many plays were read.
-fn load_spotify(dir: &Path) -> Result<Vec<Play>> {
-    let loaded = sources::spotify::load(dir)?;
+fn load_spotify(path: &Path) -> Result<Vec<Play>> {
+    let found = sources::read(&read_path(path, "Spotify")?, 0.0)?;
+    let Some(loaded) = found.spotify else {
+        bail!(
+            "No Spotify files found in {}. Looking for Streaming_History_Audio_*.json (extended history) or StreamingHistory_music_*.json.",
+            path.display()
+        );
+    };
     report("Spotify", loaded.plays.len(), &loaded.warnings);
     Ok(loaded.plays)
 }
 
+/// Reads the files at `path` (a folder or a file) of the `service` export.
+fn read_path(path: &Path, service: &str) -> Result<Vec<sources::File>> {
+    if !path.exists() {
+        bail!("{service} path does not exist: {}", path.display());
+    }
+    sources::read_path(path)
+}
+
+/// Reads the YouTube history at `path` (a folder or a file), counting each
+/// YouTube Music play as `avg_minutes`.
+fn read_ytm(path: &Path, avg_minutes: f64) -> Result<sources::Loaded> {
+    let found = sources::read(&read_path(path, "YouTube Music")?, avg_minutes)?;
+    let Some(loaded) = found.youtube else {
+        bail!(
+            "No YouTube history found in {}. Looking for watch-history.json or My Activity.json from Google Takeout, in JSON format.",
+            path.display()
+        );
+    };
+    report("YouTube Music", loaded.plays.len(), &loaded.warnings);
+    Ok(loaded)
+}
+
 /// Loads the YouTube Music history and replaces the estimates with the real
 /// lengths in the song database, when it can be read.
-fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Play>> {
-    let mut loaded = sources::ytmusic::load(file, avg_minutes)?;
-    report("YouTube Music", loaded.plays.len(), &loaded.warnings);
-
+fn load_ytm(path: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Play>> {
+    let mut loaded = read_ytm(path, avg_minutes)?;
     let (db, warnings) = songdb::load(db, songdb::cache_path().as_deref());
     if let Some(db) = db {
         let matched = songdb::apply(&mut loaded.plays, &db);
@@ -341,7 +353,8 @@ fn load_ytm(file: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Pla
 /// doesn't have to `spotify-durations-<local date and time>.json`, the unverified
 /// ones with a `check`.
 fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
-    let plays = sources::spotify::full_plays(dir)?;
+    let plays =
+        sources::spotify::full_plays(&read_path(dir, "Spotify")?, &dir.display().to_string())?;
     let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
     for w in &warnings {
         eprintln!("warning: {w}");
@@ -371,8 +384,7 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
 /// Writes the YouTube Music songs the song database doesn't have to
 /// `ytm-missing-<local date and time>.json`.
 fn export_ytm(file: &Path, origin: songdb::Origin) -> Result<()> {
-    let loaded = sources::ytmusic::load(file, 0.0)?;
-    report("YouTube Music", loaded.plays.len(), &loaded.warnings);
+    let loaded = read_ytm(file, 0.0)?;
     let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
     for w in &warnings {
         eprintln!("warning: {w}");
@@ -510,82 +522,6 @@ fn report(name: &str, n: usize, warnings: &[String]) {
     eprintln!("{name}: {} loaded", fmt_count(n as u64, "play"));
     for w in warnings {
         eprintln!("  warning: {w}");
-    }
-}
-
-/// Prints the full recap to stdout, including what the image leaves out (every
-/// month, longer top lists and the favorite hour).
-fn print_stats(s: &Stats) {
-    let approx = if s.estimated_ms > 0 { "≈ " } else { "" };
-    println!("\n== {} ==", range_label(s.from, s.to));
-    println!(
-        "Minutes listened: {approx}{}  ({})",
-        fmt_int(minutes(s.total_ms)),
-        fmt_count(s.plays, "play")
-    );
-    if s.estimated_ms > 0 {
-        println!(
-            "  of which estimated (YouTube Music): {}",
-            fmt_int(minutes(s.estimated_ms))
-        );
-    }
-    for (src, ms) in &s.by_source {
-        let pct = *ms as f64 * 100.0 / s.total_ms as f64;
-        println!(
-            "  {}: {} min ({pct:.0}%)",
-            src.label(),
-            fmt_int(minutes(*ms))
-        );
-    }
-
-    match s.by_year() {
-        Some(years) => {
-            println!("\nMinutes per year:");
-            for (y, ms) in years {
-                println!("  {y}  {:>8} min", fmt_int(minutes(ms)));
-            }
-        }
-        None => {
-            println!("\nMinutes per month:");
-            for ((y, m), ms) in &s.by_month {
-                println!("  {y}-{m:02}  {:>8} min", fmt_int(minutes(*ms)));
-            }
-        }
-    }
-
-    println!("\nTop artists:");
-    for (i, a) in s.top_artists.iter().enumerate() {
-        println!(
-            "  {:>2}. {}  ({} min, {})",
-            i + 1,
-            a.name,
-            fmt_int(minutes(a.ms)),
-            fmt_count(a.plays, "play")
-        );
-    }
-    println!("\nTop songs:");
-    for (i, t) in s.top_tracks.iter().enumerate() {
-        let artist = t.detail.as_deref().unwrap_or("");
-        println!(
-            "  {:>2}. {} · {}  ({} min, {})",
-            i + 1,
-            t.name,
-            artist,
-            fmt_int(minutes(t.ms)),
-            fmt_count(t.plays, "play")
-        );
-    }
-
-    println!(
-        "\nDistinct artists: {} · Distinct songs: {}",
-        fmt_int(s.distinct_artists as u64),
-        fmt_int(s.distinct_tracks as u64)
-    );
-    if let Some((day, ms)) = s.top_day {
-        println!("Top day: {day} ({} min)", fmt_int(minutes(ms)));
-    }
-    if let Some((h, _)) = s.top_hour {
-        println!("Favorite hour: {h:02}:00–{:02}:00", (h + 1) % 24);
     }
 }
 

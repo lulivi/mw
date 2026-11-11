@@ -8,7 +8,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "cli")]
+use std::path::PathBuf;
+#[cfg(feature = "cli")]
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -27,6 +30,7 @@ const VERSION: u32 = 1;
 pub const IMPORT_RANGE: std::ops::RangeInclusive<u64> = 30..=1200;
 /// `check` of a song whose length nobody knows yet.
 pub const NO_LENGTH: &str = "no length";
+#[cfg(feature = "cli")]
 /// Most time a download may take before falling back to the cached copy.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -55,6 +59,7 @@ struct Song {
     video_ids: Vec<String>,
 }
 
+#[cfg(feature = "cli")]
 /// Where the database is read from.
 pub enum Origin<'a> {
     /// Downloaded, falling back to the cached copy.
@@ -65,6 +70,7 @@ pub enum Origin<'a> {
     Offline,
 }
 
+#[cfg(feature = "cli")]
 impl<'a> Origin<'a> {
     /// From `--db` and `--offline`: a value starting with `http://` or `https://`
     /// is a URL, anything else a path.
@@ -78,11 +84,13 @@ impl<'a> Origin<'a> {
     }
 }
 
+#[cfg(feature = "cli")]
 /// The cached copy: `<cache folder>/mw/songs.json`, if the system has a cache folder.
 pub fn cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join("mw").join("songs.json"))
 }
 
+#[cfg(feature = "cli")]
 /// Loads the database. `None` when it couldn't be read; the warnings say why.
 pub fn load(origin: Origin, cache: Option<&Path>) -> (Option<Db>, Vec<String>) {
     let mut warnings = vec![];
@@ -124,6 +132,7 @@ pub fn load(origin: Origin, cache: Option<&Path>) -> (Option<Db>, Vec<String>) {
     (cached, warnings)
 }
 
+#[cfg(feature = "cli")]
 /// What a download got.
 enum Download {
     /// The server's copy is the cached one (`304 Not Modified`).
@@ -136,6 +145,7 @@ enum Download {
     },
 }
 
+#[cfg(feature = "cli")]
 /// Downloads and parses the database. With `etag` (the cached copy's), the
 /// server may answer that the copy is still current.
 fn download(url: &str, etag: Option<&str>) -> Result<Download> {
@@ -165,6 +175,7 @@ fn download(url: &str, etag: Option<&str>) -> Result<Download> {
     Ok(Download::New { db, text, etag })
 }
 
+#[cfg(feature = "cli")]
 /// Where the cached copy's ETag is kept: next to it, as `songs.json.etag`.
 fn etag_path(cache: &Path) -> PathBuf {
     let mut name = cache.as_os_str().to_owned();
@@ -172,6 +183,7 @@ fn etag_path(cache: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+#[cfg(feature = "cli")]
 /// Saves the cached copy and its ETag (removing a stale one when there is none).
 fn save_with_etag(cache: &Path, text: &str, etag: Option<&str>) -> Result<()> {
     save(cache, text)?;
@@ -187,6 +199,7 @@ fn save_with_etag(cache: &Path, text: &str, etag: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "cli")]
 /// Reads and parses a database file.
 fn read(path: &Path) -> Result<Db> {
     let text =
@@ -195,7 +208,7 @@ fn read(path: &Path) -> Result<Db> {
 }
 
 /// Parses the database, rejecting other format versions.
-fn parse(text: &str) -> Result<Db> {
+pub fn parse(text: &str) -> Result<Db> {
     let db: Db = serde_json::from_str(text)?;
     if db.version != VERSION {
         bail!(
@@ -403,7 +416,7 @@ pub fn import(path: &Path, songs: Vec<SongLength>, dry_run: bool) -> Result<Impo
     Ok(out)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
     use chrono::Utc;

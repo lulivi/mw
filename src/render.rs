@@ -4,7 +4,6 @@
 //! where stories show their own UI: the top one is left empty, and only the
 //! footer enters the bottom one, next to the reply box.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -21,6 +20,25 @@ const FONT_BOLD: &[u8] = include_bytes!("../assets/Inter-Bold.otf");
 /// Tiny5 Mono Regular (SIL Open Font License 1.1, see assets/OFL-Tiny5Mono.txt),
 /// used only for the main figure. Its pixel rows are crisp at multiples of 8 px.
 const FONT_NUMBER: &[u8] = include_bytes!("../assets/Tiny5Mono-Regular.otf");
+
+/// Accent colors of the image (`--color`), by name, as SVG hex strings.
+pub const ACCENTS: [(&str, &str); 7] = [
+    ("orange", "#FF6B4A"),
+    ("purple", "#B388FF"),
+    ("blue", "#5AA9FF"),
+    ("green", "#3DDC97"),
+    ("pink", "#FF6FB5"),
+    ("red", "#FF5A5F"),
+    ("gray", "#E3E7EB"),
+];
+
+/// The accent color with this name.
+pub fn accent(name: &str) -> Option<&'static str> {
+    ACCENTS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, hex)| *hex)
+}
 
 /// Image width in px.
 const W: f32 = 1080.0;
@@ -550,8 +568,8 @@ fn list(
     end
 }
 
-/// Converts the SVG to PNG and saves it.
-pub fn save_png(svg: &str, out: &Path) -> Result<()> {
+/// Converts the SVG to PNG.
+pub fn png(svg: &str) -> Result<Vec<u8>> {
     let mut opt = usvg::Options::default();
     {
         let db = Arc::make_mut(&mut opt.fontdb);
@@ -563,10 +581,7 @@ pub fn save_png(svg: &str, out: &Path) -> Result<()> {
     let mut pixmap =
         tiny_skia::Pixmap::new(W as u32, H as u32).context("cannot create the image")?;
     resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
-    pixmap
-        .save_png(out)
-        .with_context(|| format!("cannot save {}", out.display()))?;
-    Ok(())
+    pixmap.encode_png().context("cannot encode the image")
 }
 
 #[cfg(test)]

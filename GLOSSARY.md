@@ -31,3 +31,19 @@ _Avoid_: Export file, durations file
 **Check**:
 A mark on an entry of a contribution file saying it needs review before it goes into the song database, and why.
 _Avoid_: Flag, unverified
+
+**Extended history**:
+Spotify's full listening history, requested on its own, which says how each play ended.
+_Avoid_: Full export
+
+**Basic history**:
+Spotify's last year of plays, from "Account data".
+_Avoid_: Short history
+
+**YouTube history**:
+The watch history Google Takeout exports (as `watch-history.json` or `My Activity.json`), from which mw reads the YouTube Music plays.
+_Avoid_: Takeout file, watch history file
+
+**Web page**:
+mw running in the browser, published on GitHub Pages.
+_Avoid_: Web app, site, frontend
