@@ -4,6 +4,7 @@ Your own "Wrapped" from your Spotify and YouTube Music data: total minutes, minu
 
 Everything runs locally: your data never leaves your computer. The only download is the shared [song database](data/README.md) (no data of yours is sent); `--offline` skips it.
 
+- [Use it in the browser](#use-it-in-the-browser)
 - [Samples](#samples)
 - [Installation](#installation)
 - [Prerequisites](#prerequisites)
@@ -11,6 +12,10 @@ Everything runs locally: your data never leaves your computer. The only download
 - [How it counts](#how-it-counts)
 - [Development](#development)
 - [Credits](#credits)
+
+## Use it in the browser
+
+The easiest way, with nothing to install: open **[lulivi.github.io/mw](https://lulivi.github.io/mw/)**, add your [Spotify and YouTube data](#prerequisites), choose the options and download the image (or share it, on a phone). It runs this same program in your browser, so your files are never uploaded and the image is the same as from the command line. How it works: [docs/web.md](docs/web.md).
 
 ## Samples
 
@@ -63,7 +68,7 @@ With Rust installed, you can instead run `cargo install --git https://github.com
 1. Open spotify.com/account/privacy in a browser (a phone browser works too).
 2. Under "Download your data", tick **Extended streaming history** and click "Request".
 3. Confirm the request from the email Spotify sends you. The ZIP can take up to 30 days.
-4. Unzip it: inside there are `Streaming_History_Audio_*.json` files.
+4. Use the ZIP as is (`mw` reads it), or its `Streaming_History_Audio_*.json` files.
 
 The basic history ("Account data", `StreamingHistory_music_*.json`) also works, but it only covers the last year.
 
@@ -72,13 +77,13 @@ The basic history ("Account data", `StreamingHistory_music_*.json`) also works, 
 1. On takeout.google.com, click "Deselect all" and tick only **YouTube and YouTube Music**.
 2. Under "All YouTube data included", keep only **history**.
 3. Under "Multiple formats", change history from HTML to **JSON**.
-4. From the ZIP, take `Takeout/YouTube and YouTube Music/history/watch-history.json`.
+4. Use the ZIP as is (`mw` reads it), or `watch-history.json` from it. `My Activity.json` from "My Activity" → YouTube works too, under any name.
 
 ## Running
 
 ```bash
-# 2025 with both sources combined
-./mw --spotify ./my_data/spotify --ytm ./my_data/watch-history.json --year 2025
+# 2025 with both sources combined, straight from the ZIPs
+./mw --spotify ./my_spotify_data.zip --ytm ./takeout-20250101T000000Z-001.zip --year 2025
 
 # A custom range, Spotify only, terminal only
 ./mw --spotify ./my_data/spotify --from 2024-06-01 --to 2025-05-31 --source spotify --no-image
@@ -128,10 +133,11 @@ cargo run --release -- --help      # build and run with arguments
 ./scripts/test.sh                  # cargo test
 ./scripts/lint.sh                  # cargo fmt --check + clippy + shellcheck, as CI runs them
 ./scripts/samples.sh               # regenerate docs/samples/ after changing the image
+./scripts/web.sh                   # build the web page into target/web (see docs/web.md)
 ./scripts/dist.sh                  # cross-compile the release archives into dist/ (needs Docker)
 ```
 
-Layout: `src/sources/` (one reader per service) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `songdb.rs` loads the song database and applies its lengths, `lengths.rs` measures song lengths from Spotify full plays and defines the contribution file, `musicbrainz.rs` looks up song lengths for `mw db resolve`, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere.
+Layout: `src/sources/` (one reader per service, which tells the files apart by their contents and opens ZIPs) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `songdb.rs` loads the song database and applies its lengths, `lengths.rs` measures song lengths from Spotify full plays and defines the contribution file, `musicbrainz.rs` looks up song lengths for `mw db resolve`, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere. `main.rs` is the command line; the rest is a library that `web/` compiles to WebAssembly for the web page.
 
 ## Credits
 
