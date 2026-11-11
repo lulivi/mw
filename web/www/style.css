@@ -318,25 +318,30 @@ select, input[type="date"], button, .primary {
   .colors { min-height: 3.125rem; align-items: center; }
 }
 
-/* Radios drawn as one row of joined buttons. */
+/* Radios drawn as one row of joined buttons, sharing the full width equally. */
 .segmented {
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: flex;
   padding: 0.25rem;
   gap: 0.25rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--card);
 }
+.segmented label { flex: 1 1 0; min-width: 0; }
 .segmented span {
   display: grid;
   place-items: center;
+  height: 100%;
   min-height: 2.5rem;
-  padding: 0 1rem;
+  padding: 0.25rem 0.5rem;
+  text-align: center;
+  line-height: 1.2;
   border-radius: 8px;
   cursor: pointer;
   transition: background-color 150ms ease-out, color 150ms ease-out;
 }
+/* Narrow: smaller text so "Whole history" and "YouTube Music" keep one line. */
+@container (width < 26rem) { .segmented span { padding: 0.25rem; font-size: 0.875rem; } }
 .segmented label:hover span { background: var(--bg); }
 /* Same weight when checked, so choosing never changes the width. */
 .segmented label:has(:checked) span { background: var(--accent); color: var(--on-accent); }
@@ -350,15 +355,13 @@ select, input[type="date"], button, .primary {
 .period:has([value="year"]:checked) .when-year,
 .period:has([value="range"]:checked) .when-range { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 .period:has([value="range"]:checked) .when-range { flex-wrap: nowrap; }
-.when-range label { display: flex; flex: 1; align-items: center; gap: 0.5rem; min-width: 0; }
+/* The two dates share the row; their names are for screen readers. */
+.when-range label { display: flex; flex: 1; min-width: 0; }
 .when-range input { flex: 1; min-width: 0; }
-/* Narrow: the whole row for the two dates; their names stay for screen readers. */
-@container (width < 32rem) {
-  .when-range span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-}
 
 /* Radios drawn as swatches of the image's colors; the names are for screen readers. */
-.colors { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+/* Padded so the ring around the chosen swatch is never cut off. */
+.colors { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0 5px; }
 .colors label {
   width: 2.75rem;
   height: 2.75rem;
