@@ -18,6 +18,7 @@ serde_json = { version = "1.0.154", features = ["preserve_order"] }
 ttf-parser = "0.25.1"
 unicode-normalization = "0.1.26"
 ureq = { version = "3.5.1", features = ["json"], optional = true }
+zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2"] }
 
 [features]
 # The command line program; without it the library builds for WebAssembly.

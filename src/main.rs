@@ -25,11 +25,11 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
+    /// Folder, ZIP or file with Spotify's Streaming_History_Audio_*.json files
     #[arg(long, value_name = "DIR")]
     spotify: Option<PathBuf>,
 
-    /// Folder (or file) with the YouTube history from Google Takeout (watch-history.json or My Activity.json)
+    /// Folder, ZIP or file with the YouTube history from Google Takeout (watch-history.json or My Activity.json)
     #[arg(long, value_name = "PATH")]
     ytm: Option<PathBuf>,
 
@@ -116,7 +116,7 @@ enum Command {
 enum DbCommand {
     /// Write the song lengths of your Spotify full plays to a file you can share, without your listening history
     ExportSpotify {
-        /// Folder (or file) with Spotify's Streaming_History_Audio_*.json files
+        /// Folder, ZIP or file with Spotify's Streaming_History_Audio_*.json files
         #[arg(long, value_name = "DIR")]
         spotify: PathBuf,
 
@@ -126,7 +126,7 @@ enum DbCommand {
 
     /// Write the YouTube Music songs the song database doesn't have to a file you can share, without your listening history
     ExportYtm {
-        /// Folder (or file) with the YouTube history from Google Takeout (watch-history.json or My Activity.json)
+        /// Folder, ZIP or file with the YouTube history from Google Takeout (watch-history.json or My Activity.json)
         #[arg(long, value_name = "PATH")]
         ytm: PathBuf,
 

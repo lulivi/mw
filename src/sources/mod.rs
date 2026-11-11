@@ -2,13 +2,14 @@
 //!
 //! They read [`File`]s already in memory, so the same code serves the command
 //! line (files read from disk with [`read_path`]) and the web page (files the
-//! user added).
+//! user added). Files are told apart by their contents, and ZIPs are opened.
 
 pub mod spotify;
 pub mod ytmusic;
 
 use std::collections::HashSet;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -36,35 +37,102 @@ pub struct Found {
     pub unused: Vec<String>,
 }
 
-/// Reads every Spotify and YouTube history in `files`, telling them apart by
-/// their contents; YouTube Music plays count as `avg_minutes` each.
-///
+/// What one file holds.
+pub enum Content {
+    /// Spotify's extended history.
+    Extended(Vec<Play>),
+    /// Spotify's basic history.
+    Basic(Vec<Play>),
+    /// The YouTube history, as JSON.
+    YouTube(Vec<Play>),
+    /// The YouTube history as HTML, which can't be read; the file's name.
+    Html(String),
+    /// None of them; the file's name.
+    Unused(String),
+}
+
+/// Reads every Spotify and YouTube history in `files`, as [`parse`] and
+/// [`combine`] do.
+pub fn read(files: &[File], avg_minutes: f64) -> Result<Found> {
+    let mut contents = vec![];
+    for f in files {
+        contents.extend(parse(f, avg_minutes)?);
+    }
+    combine(&contents)
+}
+
+/// Tells what a file holds by its contents, not its name; YouTube Music plays
+/// count as `avg_minutes` each. A ZIP gives what each `.json` and `.html` file
+/// in it holds. Fails only on a ZIP that can't be opened.
+pub fn parse(f: &File, avg_minutes: f64) -> Result<Vec<Content>> {
+    let name = f.name.to_ascii_lowercase();
+    if name.ends_with(".zip") {
+        let mut contents = vec![];
+        for inner in unzip(f)? {
+            contents.extend(parse(&inner, avg_minutes)?);
+        }
+        return Ok(contents);
+    }
+    let Ok(text) = f.text() else {
+        return Ok(vec![Content::Unused(f.name.clone())]);
+    };
+    let content = if name.ends_with(".html") {
+        if ytmusic::is_html(text) {
+            Content::Html(f.name.clone())
+        } else {
+            Content::Unused(f.name.clone())
+        }
+    } else if let Some(plays) = spotify::parse_extended(text) {
+        Content::Extended(plays)
+    } else if let Some(plays) = spotify::parse_basic(text) {
+        Content::Basic(plays)
+    } else if let Some(plays) = ytmusic::parse(text, avg_minutes) {
+        Content::YouTube(plays)
+    } else {
+        Content::Unused(f.name.clone())
+    };
+    Ok(vec![content])
+}
+
+/// The `.json` and `.html` files in a ZIP, named `<ZIP name>/<path inside>`.
+fn unzip(f: &File) -> Result<Vec<File>> {
+    let open = || format!("cannot open {} as a ZIP", f.name);
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&f.bytes)).with_context(open)?;
+    let mut files = vec![];
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).with_context(open)?;
+        let name = format!("{}/{}", f.name, entry.name().with_context(open)?);
+        let lower = name.to_ascii_lowercase();
+        if !entry.is_file() || !(lower.ends_with(".json") || lower.ends_with(".html")) {
+            continue;
+        }
+        let mut bytes = vec![];
+        entry
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("cannot read {name}"))?;
+        files.push(File { name, bytes });
+    }
+    Ok(files)
+}
+
+/// Puts together what the files hold. Spotify plays come from the extended
+/// history when there is one, else from the basic history (with a warning).
 /// Plays in more than one YouTube history (`watch-history.json` and
 /// `My Activity.json` hold the same ones) count once. Fails when the YouTube
 /// history is only there as HTML.
-pub fn read(files: &[File], avg_minutes: f64) -> Result<Found> {
+pub fn combine<'a>(contents: impl IntoIterator<Item = &'a Content>) -> Result<Found> {
     let (mut extended, mut basic, mut html) = (vec![], vec![], None);
     let mut youtube: Option<Vec<Play>> = None;
     let mut unused = vec![];
-    for f in files {
-        let Ok(text) = f.text() else {
-            unused.push(f.name.clone());
-            continue;
-        };
-        if f.name.to_ascii_lowercase().ends_with(".html") {
-            if ytmusic::is_html(text) {
-                html.get_or_insert(&f.name);
-            } else {
-                unused.push(f.name.clone());
+    for c in contents {
+        match c {
+            Content::Extended(plays) => extended.extend_from_slice(plays),
+            Content::Basic(plays) => basic.extend_from_slice(plays),
+            Content::YouTube(plays) => youtube.get_or_insert_default().extend_from_slice(plays),
+            Content::Html(name) => {
+                html.get_or_insert(name);
             }
-        } else if let Some(plays) = spotify::parse_extended(text) {
-            extended.extend(plays);
-        } else if let Some(plays) = spotify::parse_basic(text) {
-            basic.extend(plays);
-        } else if let Some(plays) = ytmusic::parse(text, avg_minutes) {
-            youtube.get_or_insert_default().extend(plays);
-        } else {
-            unused.push(f.name.clone());
+            Content::Unused(name) => unused.push(name.clone()),
         }
     }
 
@@ -129,7 +197,7 @@ impl File {
     }
 }
 
-/// Reads a file, or every `.json` and `.html` file in a folder and its
+/// Reads a file, or every `.json`, `.html` and `.zip` file in a folder and its
 /// subfolders, sorted by path.
 pub fn read_path(path: &Path) -> Result<Vec<File>> {
     let read = |p: &Path| -> Result<File> {
@@ -148,10 +216,11 @@ pub fn read_path(path: &Path) -> Result<Vec<File>> {
             let p = entry?.path();
             if p.is_dir() {
                 dirs.push(p);
-            } else if p
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("json") || e.eq_ignore_ascii_case("html"))
-            {
+            } else if p.extension().is_some_and(|e| {
+                ["json", "html", "zip"]
+                    .iter()
+                    .any(|x| e.eq_ignore_ascii_case(x))
+            }) {
                 paths.push(p);
             }
         }
@@ -193,6 +262,33 @@ mod tests {
         assert!(spotify.warnings.is_empty());
         assert_eq!(found.youtube.unwrap().plays[0].artist, "A");
         assert_eq!(found.unused, ["Userdata.json", "empty.json", "other.json"]);
+    }
+
+    #[test]
+    fn opens_zips() {
+        use std::io::Write;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(vec![]));
+        let opts = zip::write::SimpleFileOptions::default();
+        for (name, text) in [
+            ("Spotify Extended Streaming History/a.json", EXTENDED),
+            ("Spotify Extended Streaming History/ReadMeFirst.pdf", "%PDF"),
+            ("Takeout/YouTube/historial.json", YOUTUBE),
+        ] {
+            zip.start_file(name, opts).unwrap();
+            zip.write_all(text.as_bytes()).unwrap();
+        }
+        let bytes = zip.finish().unwrap().into_inner();
+        let found = read(&[file("my_spotify_data.zip", "")], 3.5);
+        assert!(found.err().unwrap().to_string().contains("cannot open"));
+
+        let zip = File {
+            name: "export.zip".into(),
+            bytes,
+        };
+        let found = read(&[zip], 3.5).unwrap();
+        assert_eq!(found.spotify.unwrap().plays.len(), 1);
+        assert_eq!(found.youtube.unwrap().plays.len(), 1);
+        assert!(found.unused.is_empty(), "only .json and .html are read");
     }
 
     #[test]
