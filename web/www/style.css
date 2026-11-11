@@ -314,7 +314,7 @@ select, input[type="date"], button, .primary {
     margin: 0;
   }
   .field { grid-template-columns: 6.5rem 1fr; gap: 0; align-items: center; }
-  .when-year, .when-range { margin-left: 6.5rem; }
+  .when-all, .when-year, .when-range { margin-left: 6.5rem; }
   .colors { min-height: 3.125rem; align-items: center; }
 }
 
@@ -338,14 +338,24 @@ select, input[type="date"], button, .primary {
   transition: background-color 150ms ease-out, color 150ms ease-out;
 }
 .segmented label:hover span { background: var(--bg); }
-.segmented label:has(:checked) span { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+/* Same weight when checked, so choosing never changes the width. */
+.segmented label:has(:checked) span { background: var(--accent); color: var(--on-accent); }
 .segmented label:has(:focus-visible) span { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-/* The year or the dates, under Period, for the choice that needs them. */
-.when-year, .when-range { display: none; margin-top: 0.75rem; }
+/* Under Period, one row for what the choice means: the same height for each,
+   so choosing never moves the options below. */
+.when-all, .when-year, .when-range { display: none; height: 3rem; margin: 0.5rem 0 0; }
+.when-all { color: var(--muted); font-size: 0.875rem; }
+.period:has([value="all"]:checked) .when-all,
 .period:has([value="year"]:checked) .when-year,
 .period:has([value="range"]:checked) .when-range { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
-.when-range label { display: flex; align-items: center; gap: 0.5rem; }
+.period:has([value="range"]:checked) .when-range { flex-wrap: nowrap; }
+.when-range label { display: flex; flex: 1; align-items: center; gap: 0.5rem; min-width: 0; }
+.when-range input { flex: 1; min-width: 0; }
+/* Narrow: the whole row for the two dates; their names stay for screen readers. */
+@container (width < 32rem) {
+  .when-range span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
 
 /* Radios drawn as swatches of the image's colors; the names are for screen readers. */
 .colors { display: flex; flex-wrap: wrap; gap: 0.5rem; }
