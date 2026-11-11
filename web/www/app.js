@@ -18,7 +18,12 @@ const oneColumn = matchMedia("(max-width: 899px)");
 // Theme: the device's, or light or dark, remembered on this device only.
 const THEMES = { "": "Device", light: "Light", dark: "Dark" };
 const root = document.documentElement;
-const showTheme = () => ($("theme").textContent = `Theme: ${THEMES[root.dataset.theme] ?? "Device"}`);
+/** Names the theme on the button; the CSS shows its icon. */
+function showTheme() {
+  const label = `Theme: ${THEMES[root.dataset.theme] ?? "Device"}`;
+  $("theme").setAttribute("aria-label", label);
+  $("theme").title = label;
+}
 $("theme").addEventListener("click", () => {
   const names = Object.keys(THEMES);
   root.dataset.theme = names[(names.indexOf(root.dataset.theme ?? "") + 1) % names.length];
