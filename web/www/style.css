@@ -314,7 +314,7 @@ select, input[type="date"], button, .primary {
     margin: 0;
   }
   .field { grid-template-columns: 6.5rem 1fr; gap: 0; align-items: center; }
-  .when-all, .when-year, .when-range { margin-left: 6.5rem; }
+  .period > .when-all, .period > .when-year, .period > .when-range { margin-left: 6.5rem; padding-left: 1.25rem; }
   .colors { min-height: 3.125rem; align-items: center; }
 }
 
@@ -344,8 +344,8 @@ select, input[type="date"], button, .primary {
 
 /* Under Period, one row for what the choice means: the same height for each,
    so choosing never moves the options below. */
-.when-all, .when-year, .when-range { display: none; height: 3rem; margin: 0.5rem 0 0; }
-.when-all { color: var(--muted); font-size: 0.875rem; }
+/* Indented under the buttons, so it reads as part of the choice above. */
+.when-all, .when-year, .when-range { display: none; height: 3rem; margin: 0.5rem 0 0; padding-left: 1rem; }
 .period:has([value="all"]:checked) .when-all,
 .period:has([value="year"]:checked) .when-year,
 .period:has([value="range"]:checked) .when-range { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
