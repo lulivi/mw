@@ -129,9 +129,10 @@ header { margin-bottom: 2.5rem; }
 }
 h1 {
   margin: 0;
-  font: 400 2.5rem/1.1 "Tiny5 Mono", ui-monospace, monospace;
+  font: 400 3rem/1 "Tiny5 Mono", ui-monospace, monospace;
 }
-@media (min-width: 600px) { h1 { font-size: 3rem; } }
+/* Multiples of 8px keep the pixel font crisp. */
+@container (min-width: 30rem) { h1 { font-size: 4rem; } }
 /* Theme button: an icon for the theme in use; its name is in its label. */
 .theme {
   flex: none;
