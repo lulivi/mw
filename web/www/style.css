@@ -119,7 +119,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .content { width: 100%; container-type: inline-size; }
 
 /* Intro */
-header { margin-bottom: 2.5rem; }
+header { display: flow-root; margin-bottom: 2.5rem; }
 .title-row {
   display: flex;
   align-items: center;
@@ -147,30 +147,19 @@ h1 {
 :root[data-theme="light"] .icon-light,
 :root[data-theme="dark"] .icon-dark { display: block; }
 
-.lede { margin: 0 0 1.5rem; font-size: 1.125rem; max-width: 32rem; }
-/* One line where it fits, otherwise one step per line. */
-.steps {
-  display: flex;
-  gap: 0.5rem 1.25rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: step;
-  font-weight: 700;
-  font-size: 0.9375rem;
-}
-@container (width < 34rem) { .steps { flex-direction: column; } }
-.steps li { display: flex; align-items: center; gap: 0.5rem; counter-increment: step; }
-.steps li::before {
-  content: counter(step);
-  display: grid;
+.lede { margin: 0; font-size: 1.125rem; max-width: 32rem; }
+/* The step number before each step's heading, in the image's pixel font. */
+.step {
+  display: inline-grid;
   place-items: center;
   width: 1.75rem;
   height: 1.75rem;
+  margin-right: 0.5rem;
   border-radius: 8px;
   background: var(--accent);
   color: var(--on-accent);
   font: 400 1rem/1 "Tiny5 Mono", monospace;
+  vertical-align: 0.1em;
 }
 .privacy {
   display: flex;
@@ -264,6 +253,7 @@ h2 { margin: 0 0 1rem; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.
 
 /* Files added */
 .files { list-style: none; padding: 0; margin: 1rem 0 0; }
+.files:empty { display: none; }
 .files > li {
   display: grid;
   grid-template-columns: 1fr auto;
