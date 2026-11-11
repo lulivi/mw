@@ -14,6 +14,8 @@ cargo build -p mw-web --profile web --target wasm32-unknown-unknown
 rm -rf "$out"
 mkdir -p "$out"
 cp -r web/www/. "$out"
+# The placeholder shown before the first image.
+cp docs/samples/year.png "$out/sample.png"
 wasm-bindgen --target web --no-typescript --out-dir "$out/pkg" \
   target/wasm32-unknown-unknown/web/mw_web.wasm
 ls -l "$out" "$out/pkg"

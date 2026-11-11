@@ -10,8 +10,29 @@ const worker = new Worker(new URL("worker.js", import.meta.url), { type: "module
 let nextId = 0;
 /** Whether the files added can make an image (they hold a history and agree). */
 let ready = false;
-let busy = false;
 let imageUrl;
+const smooth = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+/** Whether the page is one column (a phone), with the image at the end. */
+const oneColumn = matchMedia("(max-width: 899px)");
+
+// Theme: the device's, or light or dark, remembered on this device only.
+const THEMES = { "": "Device", light: "Light", dark: "Dark" };
+const root = document.documentElement;
+/** Names the theme on the button; the CSS shows its icon. */
+function showTheme() {
+  const label = `Theme: ${THEMES[root.dataset.theme] ?? "Device"}`;
+  $("theme").setAttribute("aria-label", label);
+  $("theme").title = label;
+}
+$("theme").addEventListener("click", () => {
+  const names = Object.keys(THEMES);
+  root.dataset.theme = names[(names.indexOf(root.dataset.theme ?? "") + 1) % names.length];
+  try {
+    localStorage.setItem("theme", root.dataset.theme);
+  } catch {}
+  showTheme();
+});
+showTheme();
 
 // Time zones, with the device's selected.
 const here = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -50,7 +71,6 @@ function add(fileList) {
     files.push({ id, file });
   }
   if (files.length) {
-    setBusy(true);
     worker.postMessage({ type: "add", files, tz: form.tz.value });
   }
 }
@@ -68,7 +88,6 @@ function fileRow(id, name) {
   remove.setAttribute("aria-label", `Remove ${name}`);
   remove.addEventListener("click", () => {
     row.remove();
-    setBusy(true);
     worker.postMessage({ type: "remove", id, tz: form.tz.value });
   });
   const lines = document.createElement("ul");
@@ -106,7 +125,6 @@ form.addEventListener("submit", (e) => {
     color: form.color.value,
     tz: form.tz.value,
   };
-  setBusy(true);
   worker.postMessage({ type: "create", options });
 });
 
@@ -118,53 +136,49 @@ worker.onmessage = ({ data: msg }) => {
     if (msg.error) show(row, [], msg.error);
     else show(row, msg.lines);
   } else if (msg.type === "state") {
-    setBusy(false);
     setReady(!msg.error && msg.years.length > 0, msg.years);
     $("status").textContent = msg.error ?? "";
     $("status").classList.toggle("error", Boolean(msg.error));
-  } else if (msg.type === "result") {
-    setBusy(false);
-    result(msg);
-  } else if (msg.type === "error") {
-    setBusy(false);
+  } else if (msg.type === "result") result(msg);
+  else if (msg.type === "error") {
     $("status").textContent = "";
-    $("result").hidden = false;
-    $("output").hidden = true;
     $("error").hidden = false;
     $("error").textContent = msg.message;
   }
 };
 worker.onerror = (e) => {
-  setBusy(false);
   $("status").textContent = `Something went wrong: ${e.message}`;
   $("status").classList.add("error");
 };
 
-/** Fills the year list, keeping the year chosen if it's still there. */
+/** Opens step 2 when the files can make an image, and fills the year list,
+ * keeping the year chosen if it's still there. */
 function setReady(value, years) {
+  // With the data read, step 1 shrinks; the first time, bring the options into view.
+  $("data").classList.toggle("has-data", value);
+  if (value && !ready) $("options-title").scrollIntoView({ behavior: smooth() });
   ready = value;
   const chosen = form.year.value;
   form.year.replaceChildren(...years.map((y) => new Option(y, y)));
   form.year.value = years.includes(Number(chosen)) ? chosen : String(years.at(-1) ?? "");
-  $("create").disabled = busy || !ready;
+  $("settings").disabled = !ready;
+  $("needs-file").hidden = ready;
 }
 
-function setBusy(value) {
-  busy = value;
-  $("create").disabled = busy || !ready;
-}
-
-/** Shows the image, with its download and share buttons, notes and text. */
-function result({ png, text, notes }) {
+/** Shows the image, with its download and share buttons and notes. */
+function result({ png, notes }) {
   const blob = new Blob([png], { type: "image/png" });
   if (imageUrl) URL.revokeObjectURL(imageUrl);
   imageUrl = URL.createObjectURL(blob);
-  $("image").src = imageUrl;
+  const image = $("image");
+  image.src = imageUrl;
+  image.alt = "Your listening recap";
+  image.classList.remove("placeholder");
+  $("caption").hidden = true;
   $("download").href = imageUrl;
   $("notes").replaceChildren(
     ...notes.map((n) => Object.assign(document.createElement("li"), { textContent: n })),
   );
-  $("text").textContent = text;
 
   const file = new File([blob], "wrapped.png", { type: "image/png" });
   const share = $("share");
@@ -173,6 +187,6 @@ function result({ png, text, notes }) {
 
   $("error").hidden = true;
   $("output").hidden = false;
-  $("result").hidden = false;
-  $("result").scrollIntoView({ behavior: "smooth" });
+  // On a computer the image is already in view, on the right.
+  if (oneColumn.matches) $("result").scrollIntoView({ behavior: smooth() });
 }

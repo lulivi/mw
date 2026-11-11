@@ -63,6 +63,8 @@ With Rust installed, you can instead run `cargo install --git https://github.com
 
 ## Prerequisites
 
+<!-- Same steps as web/www/index.html: change both. -->
+
 ### Spotify
 
 1. Open spotify.com/account/privacy in a browser (a phone browser works too).
