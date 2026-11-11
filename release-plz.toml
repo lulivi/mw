@@ -2,7 +2,15 @@
 # No crates.io: take the last version from git tags, and tag/release publish = false packages.
 git_only = true
 
-# The web page is published with mw's releases, not on its own.
+[[package]]
+name = "mw"
+# The tags mw has always had, now that the workspace has two packages.
+git_tag_name = "v{{ version }}"
+git_release_name = "v{{ version }}"
+
+# The web page is published with mw's releases, not on its own. Its own tag
+# pattern (never created) keeps release-plz from looking for it in mw's tags.
 [[package]]
 name = "mw-web"
 release = false
+git_tag_name = "mw-web-v{{ version }}"
