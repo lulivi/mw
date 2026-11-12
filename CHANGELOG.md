@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5](https://github.com/lulivi/mw/compare/v0.2.4...v0.2.5) - 2026-11-12
+
+### Added
+
+- *(web)* make the web page clearer and cleaner ([#49](https://github.com/lulivi/mw/pull/49))
+
+### Fixed
+
+- *(render)* keep year labels from overlapping in long histories ([#51](https://github.com/lulivi/mw/pull/51))
+
 ## [0.2.4](https://github.com/lulivi/mw/compare/v0.2.3...v0.2.4) - 2026-11-11
 
 ### Added
