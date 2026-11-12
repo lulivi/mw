@@ -331,7 +331,7 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> 
     );
 
     // Chart by month (or by year for long ranges)
-    chart(&mut svg, s, 778.0);
+    chart(&mut svg, &m, s, 778.0);
 
     // Tops
     const LISTS_Y: f32 = 1140.0;
@@ -422,7 +422,7 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> 
 /// Draws the chart at `y0`: minutes per month, or per year for more than 24 months.
 /// The bars fill the width up to a maximum, centered as a group, and the top one
 /// shows its value above it in the accent color.
-fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
+fn chart(svg: &mut Svg, m: &Measure, s: &Stats, y0: f32) {
     let years = s.by_year();
     let bars: Vec<(String, u64)> = match &years {
         Some(years) => years.iter().map(|(y, ms)| (y.to_string(), *ms)).collect(),
@@ -451,8 +451,9 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
     let bw = ((area + GAP) / n - GAP).min(MAX_BAR_W);
     let slot = bw + GAP;
     let start = CENTER - (n * slot - GAP) / 2.0;
+    let (labels, label_size) = chart_labels(m, bars.iter().map(|b| b.0.clone()).collect(), slot);
 
-    for (i, (label, ms)) in bars.iter().enumerate() {
+    for (i, ((_, ms), label)) in bars.iter().zip(&labels).enumerate() {
         let cx = start + slot * i as f32 + bw / 2.0;
         let h = ((*ms as f32 / max as f32) * (base - top)).max(if *ms > 0 { 6.0 } else { 2.0 });
         let fill = if i == max_i { svg.accent } else { BAR };
@@ -461,7 +462,7 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
         svg.text(
             cx,
             base + 44.0,
-            34.0,
+            label_size,
             i == max_i,
             label_fill,
             "middle",
@@ -478,6 +479,28 @@ fn chart(svg: &mut Svg, s: &Stats, y0: f32) {
         "middle",
         &fmt_int(minutes(max)),
     );
+}
+
+/// The chart's labels and their font size, so that none is wider than its
+/// `slot`. Years that don't fit become "’19"; if those still
+/// don't fit, the font shrinks. Widths are measured in bold, as the highlighted
+/// label is.
+fn chart_labels(m: &Measure, mut labels: Vec<String>, slot: f32) -> (Vec<String>, f32) {
+    const SIZE: f32 = 34.0;
+    let widest = |ls: &[String]| {
+        ls.iter()
+            .map(|l| m.width(l, SIZE, true))
+            .fold(0.0, f32::max)
+    };
+    if widest(&labels) > slot {
+        // Only years are this wide: month labels are single initials.
+        labels = labels
+            .iter()
+            .map(|l| format!("’{}", &l[l.len() - 2..]))
+            .collect();
+    }
+    let w = widest(&labels);
+    (labels, if w > slot { SIZE * slot / w } else { SIZE })
 }
 
 /// The number, unit and artist for a song's second line: "**7** plays · Artist"
@@ -622,6 +645,30 @@ mod tests {
         let (artist, number, unit) = info(RankBy::Plays, narrow);
         assert!(artist.ends_with('…'), "{artist}");
         assert_eq!((number.as_str(), unit), ("7", " plays"));
+    }
+
+    #[test]
+    fn chart_labels_fit_their_slots() {
+        let m = Measure::new().unwrap();
+        // The slot `chart` gives each of `n` bars.
+        let slot = |n: i32| (W - 2.0 * INNER_LEFT + 16.0) / n as f32;
+        let labels = |n: i32| {
+            chart_labels(
+                &m,
+                (0..n).map(|i| (2016 + i).to_string()).collect(),
+                slot(n),
+            )
+        };
+
+        let (ls, size) = labels(10);
+        assert_eq!((ls[9].as_str(), size), ("2025", 34.0));
+        let (ls, size) = labels(11);
+        assert_eq!((ls[10].as_str(), size), ("’26", 34.0));
+        let (ls, size) = labels(40);
+        assert!(size < 34.0);
+        for l in &ls {
+            assert!(m.width(l, size, true) <= slot(40) + 0.01, "{l} at {size}");
+        }
     }
 
     #[test]
