@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6](https://github.com/lulivi/mw/compare/v0.2.5...v0.2.6) - 2026-11-13
+
+### Added
+
+- *(web)* add the mw logo and favicon to the web page ([#53](https://github.com/lulivi/mw/pull/53))
+
 ## [0.2.5](https://github.com/lulivi/mw/compare/v0.2.4...v0.2.5) - 2026-11-12
 
 ### Added
