@@ -34,6 +34,13 @@ $("theme").addEventListener("click", () => {
 });
 showTheme();
 
+// Favicon: white letters on a dark browser tab. It follows the device, not
+// the theme button: the browser, not the page, colors the tab.
+const darkDevice = matchMedia("(prefers-color-scheme: dark)");
+const showFavicon = () => ($("favicon").href = darkDevice.matches ? "favicon-dark.png" : "favicon-light.png");
+darkDevice.addEventListener("change", showFavicon);
+showFavicon();
+
 // Time zones, with the device's selected.
 const here = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 const zones = Intl.supportedValuesOf ? Intl.supportedValuesOf("timeZone") : [];
