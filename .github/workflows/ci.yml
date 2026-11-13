@@ -86,8 +86,12 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: Install the wasm-bindgen-cli that matches Cargo.lock
-        run: cargo install wasm-bindgen-cli --locked --version "$(cargo pkgid -p wasm-bindgen | sed 's/.*@//')"
+      - name: Read the wasm-bindgen version from Cargo.lock
+        id: wasm-bindgen
+        run: echo "version=$(cargo pkgid -p wasm-bindgen | sed 's/.*@//')" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
       - run: ./scripts/web.sh
       - uses: actions/upload-pages-artifact@v5
         with:
