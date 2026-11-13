@@ -127,12 +127,17 @@ header { display: flow-root; margin-bottom: 2.5rem; }
   gap: 1rem;
   margin-bottom: 1rem;
 }
-h1 {
-  margin: 0;
-  font: 400 3rem/1 "Tiny5 Mono", ui-monospace, monospace;
+/* The logo, black or white as the theme is light or dark. */
+.logo { margin: 0; line-height: 0; }
+.logo img { width: 15rem; height: auto; }
+@container (min-width: 30rem) { .logo img { width: 20rem; } }
+.logo-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .logo-light { display: none; }
+  :root:not([data-theme="light"]) .logo-dark { display: inline; }
 }
-/* Multiples of 8px keep the pixel font crisp. */
-@container (min-width: 30rem) { h1 { font-size: 4rem; } }
+:root[data-theme="dark"] .logo-light { display: none; }
+:root[data-theme="dark"] .logo-dark { display: inline; }
 /* Theme button: an icon for the theme in use; its name is in its label. */
 .theme {
   flex: none;
