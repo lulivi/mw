@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7](https://github.com/lulivi/mw/compare/v0.2.6...v0.2.7) - 2026-11-14
+
+### Fixed
+
+- *(web)* show the favicon in the browser tab ([#60](https://github.com/lulivi/mw/pull/60))
+
+### Other
+
+- credit Lorena Jiménez for the logo and favicons ([#59](https://github.com/lulivi/mw/pull/59))
+- install a prebuilt wasm-bindgen in the pages job ([#55](https://github.com/lulivi/mw/pull/55))
+
 ## [0.2.6](https://github.com/lulivi/mw/compare/v0.2.5...v0.2.6) - 2026-11-13
 
 ### Added
