@@ -148,5 +148,6 @@ Layout: `src/sources/` (one reader per service, which tells the files apart by t
 
 ## Credits
 
+- The mw logo and favicons, by [Lorena Jiménez](https://github.com/Lorena-J).
 - [Inter](https://github.com/rsms/inter) (Regular and Bold), Copyright (c) 2016 The Inter Project Authors, SIL Open Font License 1.1: `assets/OFL-Inter.txt`.
 - [Tiny5 Mono](https://github.com/Gissio/font_Tiny5Mono) Regular, for the main figure, SIL Open Font License 1.1: `assets/OFL-Tiny5Mono.txt`.
