@@ -114,21 +114,16 @@ enum Command {
 /// `mw db` commands.
 #[derive(Subcommand)]
 enum DbCommand {
-    /// Write the song lengths of your Spotify full plays to a file you can share, without your listening history
-    ExportSpotify {
+    /// From one or both exports, write the song lengths of your Spotify full plays and the YouTube Music songs the song database doesn't have to files you can share, without your listening history
+    #[command(group = clap::ArgGroup::new("export").required(true).multiple(true).args(["spotify", "ytm"]))]
+    Export {
         /// Folder, ZIP or file with Spotify's Streaming_History_Audio_*.json files
         #[arg(long, value_name = "DIR")]
-        spotify: PathBuf,
+        spotify: Option<PathBuf>,
 
-        #[command(flatten)]
-        db: DbArgs,
-    },
-
-    /// Write the YouTube Music songs the song database doesn't have to a file you can share, without your listening history
-    ExportYtm {
         /// Folder, ZIP or file with the YouTube history from Google Takeout (watch-history.json or My Activity.json)
         #[arg(long, value_name = "PATH")]
-        ytm: PathBuf,
+        ytm: Option<PathBuf>,
 
         #[command(flatten)]
         db: DbArgs,
@@ -137,7 +132,7 @@ enum DbCommand {
     /// Look up in MusicBrainz the songs of a contribution file that have a "check", editing the file (for the maintainer)
     #[command(hide = true)]
     Resolve {
-        /// A contribution file (written by `mw db export-spotify` or `export-ytm`)
+        /// A contribution file (written by `mw db export`)
         #[arg(long, value_name = "PATH")]
         file: PathBuf,
 
@@ -149,7 +144,7 @@ enum DbCommand {
     /// Add the songs of a contribution file to the song database file (for the maintainer)
     #[command(hide = true)]
     Import {
-        /// A contribution file (written by `mw db export-spotify` or `export-ytm`)
+        /// A contribution file (written by `mw db export`)
         #[arg(long, value_name = "PATH")]
         file: PathBuf,
 
@@ -211,8 +206,9 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     if let Some(Command::Db(cmd)) = &cli.command {
         return match cmd {
-            DbCommand::ExportSpotify { spotify, db } => export_spotify(spotify, db.origin()),
-            DbCommand::ExportYtm { ytm, db } => export_ytm(ytm, db.origin()),
+            DbCommand::Export { spotify, ytm, db } => {
+                export(spotify.as_deref(), ytm.as_deref(), db.origin())
+            }
             DbCommand::Resolve { file, limit } => resolve(file, *limit),
             DbCommand::Import {
                 file,
@@ -356,12 +352,16 @@ fn load_ytm(path: &Path, avg_minutes: f64, db: songdb::Origin) -> Result<Vec<Pla
     Ok(loaded.plays)
 }
 
-/// Writes the song lengths of the Spotify full plays that the song database
-/// doesn't have to `spotify-durations-<local date and time>.json`, the unverified
-/// ones with a `check`.
-fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
-    let plays =
-        sources::spotify::full_plays(&read_path(dir, "Spotify")?, &dir.display().to_string())?;
+/// Writes the contribution files of the given exports, reading the song
+/// database once.
+fn export(spotify: Option<&Path>, ytm: Option<&Path>, origin: songdb::Origin) -> Result<()> {
+    // Read the exports first, so a bad path fails before the download.
+    let spotify = spotify
+        .map(|dir| {
+            sources::spotify::full_plays(&read_path(dir, "Spotify")?, &dir.display().to_string())
+        })
+        .transpose()?;
+    let ytm = ytm.map(|file| read_ytm(file, 0.0)).transpose()?;
     let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
     for w in &warnings {
         eprintln!("warning: {w}");
@@ -369,7 +369,25 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
     if db.is_none() {
         eprintln!("warning: no song database; exporting every song");
     }
-    let m = lengths::measure(&plays, |k| db.as_ref().is_some_and(|d| d.contains(k)));
+    let both = spotify.is_some() && ytm.is_some();
+    if let Some(plays) = spotify {
+        export_spotify(&plays, db.as_ref())?;
+    }
+    if let Some(loaded) = ytm {
+        write_contribution("ytm-missing", &songdb::missing(&loaded.plays, db.as_ref()))?;
+    }
+    println!(
+        "Send {} to the maintainer.",
+        if both { "these files" } else { "this file" }
+    );
+    Ok(())
+}
+
+/// Writes the song lengths of the Spotify full `plays` that `db` doesn't have
+/// to `spotify-durations-<local date and time>.json`, the unverified ones with
+/// a `check`.
+fn export_spotify(plays: &[Play], db: Option<&songdb::Db>) -> Result<()> {
+    let m = lengths::measure(plays, |k| db.is_some_and(|d| d.contains(k)));
 
     write_contribution("spotify-durations", &m.songs)?;
     print_songs("  to check, only one full play", m.single, [], false);
@@ -385,23 +403,6 @@ fn export_spotify(dir: &Path, origin: songdb::Origin) -> Result<()> {
             "Songs to check have a \"check\" field: set \"seconds\" if needed (seconds or \"m:ss\") and remove \"check\" to import them."
         );
     }
-    Ok(())
-}
-
-/// Writes the YouTube Music songs the song database doesn't have to
-/// `ytm-missing-<local date and time>.json`.
-fn export_ytm(file: &Path, origin: songdb::Origin) -> Result<()> {
-    let loaded = read_ytm(file, 0.0)?;
-    let (db, warnings) = songdb::load(origin, songdb::cache_path().as_deref());
-    for w in &warnings {
-        eprintln!("warning: {w}");
-    }
-    if db.is_none() {
-        eprintln!("warning: no song database; exporting every song");
-    }
-    let songs = songdb::missing(&loaded.plays, db.as_ref());
-    write_contribution("ytm-missing", &songs)?;
-    println!("Send this file to the maintainer.");
     Ok(())
 }
 

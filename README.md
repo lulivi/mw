@@ -116,21 +116,16 @@ YouTube Music doesn't say how long a song is, so `mw` looks it up in the shared
 [song database](data/README.md). You can help fill it. Nothing about what you
 listened to or when leaves your computer: only artists, titles and lengths.
 
-**If you use Spotify**, share the lengths of the songs you played to the end:
+Pass the exports you have, one or both:
 
 ```bash
-./mw db export-spotify --spotify ./my_data/spotify
+./mw db export --spotify ./my_data/spotify --ytm ./my_data/watch-history.json
 ```
 
-**If you use YouTube Music**, share the songs the database is missing:
-
-```bash
-./mw db export-ytm --ytm ./my_data/watch-history.json
-```
-
-Each one writes a file (`spotify-durations-….json` or `ytm-missing-….json`)
-with only the songs the database doesn't have yet. Send it to the maintainer;
-there's nothing to edit. Spotify needs the Extended streaming history.
+From Spotify it shares the lengths of the songs you played to the end
+(`spotify-durations-….json`); from YouTube Music, the songs the database is
+missing (`ytm-missing-….json`). Each file has only the songs the database
+doesn't have yet. Send them to the maintainer; there's nothing to edit. Spotify needs the Extended streaming history.
 
 How the files are checked and added: [docs/reviewing-contributions.md](docs/reviewing-contributions.md).
 
