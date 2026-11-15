@@ -143,7 +143,7 @@ cargo run --release -- --help      # build and run with arguments
 ./scripts/lint.sh                  # cargo fmt --check + clippy + shellcheck, as CI runs them
 ./scripts/samples.sh               # regenerate docs/samples/ after changing the image
 ./scripts/web.sh                   # build the web page into target/web (see docs/web.md)
-./scripts/dist.sh                  # cross-compile the release archives into dist/ (needs Docker)
+./scripts/dist.sh [target…]        # cross-compile release archives into dist/ (host's target by default; needs Docker)
 ```
 
 Layout: `src/sources/` (one reader per service, which tells the files apart by their contents and opens ZIPs) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `songdb.rs` loads the song database and applies its lengths, `lengths.rs` measures song lengths from Spotify full plays and defines the contribution file, `musicbrainz.rs` looks up song lengths for `mw db resolve`, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere. `main.rs` is the command line; the rest is a library that `web/` compiles to WebAssembly for the web page.
