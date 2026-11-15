@@ -221,7 +221,7 @@ fn exports_spotify_song_lengths() {
     .unwrap();
 
     let o = bin()
-        .args(["db", "export-spotify", "--spotify"])
+        .args(["db", "export", "--spotify"])
         .arg(&history)
         .arg("--db")
         .arg(&db)
@@ -251,4 +251,37 @@ fn exports_spotify_song_lengths() {
             {"artist": "A", "title": "Once", "album": "Album", "check": "one full play", "seconds": "2:30"}
         ])
     );
+}
+
+#[test]
+fn db_export_needs_a_source() {
+    let o = bin().args(["db", "export"]).output().unwrap();
+    assert!(!o.status.success());
+    let stderr = String::from_utf8_lossy(&o.stderr);
+    assert!(stderr.contains("--spotify <DIR>|--ytm <PATH>"), "{stderr}");
+}
+
+#[test]
+fn db_export_writes_one_file_per_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("songs.json");
+    std::fs::write(&db, r#"{"version": 1, "songs": {}}"#).unwrap();
+    let o = bin()
+        .args(["db", "export", "--spotify"])
+        .arg(fixtures().join("spotify"))
+        .arg("--ytm")
+        .arg(fixtures().join("watch-history.json"))
+        .arg("--db")
+        .arg(&db)
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let names: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    for prefix in ["spotify-durations-", "ytm-missing-"] {
+        assert!(names.iter().any(|n| n.starts_with(prefix)), "{names:?}");
+    }
 }
