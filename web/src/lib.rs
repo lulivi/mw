@@ -190,7 +190,7 @@ impl Session {
         let Some(stats) = stats::compute(&plays, &filters, TOP, rank_by) else {
             bail!("No plays in that date range.");
         };
-        let svg = render::build_svg(&stats, rank_by, accent)?;
+        let svg = render::build_svg(&stats, rank_by, accent, TOP)?;
         Ok(Recap {
             png: render::png(&svg)?,
             text: text::stats(&stats),

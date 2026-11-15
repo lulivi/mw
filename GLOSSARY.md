@@ -47,3 +47,7 @@ _Avoid_: Takeout file, watch history file
 **Web page**:
 mw running in the browser, published on GitHub Pages.
 _Avoid_: Web app, site, frontend
+
+**Top list**:
+The most listened artists or songs, best first, ranked by plays or by minutes.
+_Avoid_: Ranking, chart

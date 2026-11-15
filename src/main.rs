@@ -49,7 +49,7 @@ struct Cli {
     #[arg(long, value_name = "YYYY-MM-DD")]
     to: Option<NaiveDate>,
 
-    /// Size of the top lists in the terminal (the image shows up to 5)
+    /// Size of the top lists: 5 or 10 with the image, any size with --no-image
     #[arg(long, default_value_t = 5)]
     top: usize,
 
@@ -257,6 +257,13 @@ fn main() -> Result<()> {
         );
     }
 
+    if !cli.no_image && !render::IMAGE_TOPS.contains(&cli.top) {
+        bail!(
+            "--top must be 5 or 10 for the image; add --no-image for a top {} in the terminal only.",
+            cli.top
+        );
+    }
+
     // Load sources
     let mut plays: Vec<Play> = Vec::new();
     if wants(source, Source::Spotify)
@@ -287,7 +294,7 @@ fn main() -> Result<()> {
     print!("\n{}", text::stats(&stats));
 
     if !cli.no_image {
-        let svg = render::build_svg(&stats, rank_by, cli.color.hex())?;
+        let svg = render::build_svg(&stats, rank_by, cli.color.hex(), cli.top)?;
         let png = render::png(&svg)?;
         fs::write(&cli.out, png).with_context(|| format!("cannot save {}", cli.out.display()))?;
         println!("\nImage saved to {}", cli.out.display());

@@ -53,6 +53,11 @@ const CENTER: f32 = W / 2.0;
 /// Width of a Tiny5 Mono cell in font pixels. Each one ends in a blank pixel column,
 /// so the main figure is shifted half a pixel to the right to look centered.
 const NUMBER_CELL_PIXELS: f32 = 6.0;
+/// Inter's cap height, as a fraction of the font size.
+const INTER_CAP_H: f32 = 0.727;
+/// Height of a Tiny5 Mono digit, as a fraction of the font size: 5 of the 8
+/// font pixels of an em.
+const NUMBER_CAP_H: f32 = 5.0 / 8.0;
 /// Font pixels that [`tight_commas`] saves per comma.
 const COMMA_SAVED_PIXELS: f32 = 3.0;
 /// Where the chart and the artists column start; the chart ends as far from the right.
@@ -67,8 +72,9 @@ const QUIET: &str = "#8A929D";
 /// Color of the chart bars other than the top one.
 const BAR: &str = "#2C343D";
 
-/// How many rows of each top list fit in the image.
-const IMAGE_TOP: usize = 5;
+/// The sizes of the top lists the image can show. The longer one condenses the
+/// header, the main figure and the chart to make room.
+pub const IMAGE_TOPS: [usize; 2] = [5, 10];
 
 /// Between the figure and the artist in a song's second line.
 const INFO_SEP: &str = " · ";
@@ -109,11 +115,6 @@ pub fn minutes(ms: u64) -> u64 {
 /// "Jun 1, 2024"
 fn fmt_date(d: NaiveDate) -> String {
     format!("{} {}, {}", MONTHS[d.month0() as usize], d.day(), d.year())
-}
-
-/// "Jun 1"
-fn fmt_day_month(d: NaiveDate) -> String {
-    format!("{} {}", MONTHS[d.month0() as usize], d.day())
 }
 
 /// "2025" for a whole calendar year, "Jun 1, 2024" for a single day; otherwise
@@ -239,177 +240,216 @@ impl Svg {
     }
 }
 
-/// Digit groups with their commas moved closer: in a monospaced font a comma
-/// takes a whole cell, which leaves a gap around it. `px` is one font pixel wide.
-fn tight_commas(number: &str, px: f32) -> String {
-    number
-        .split(',')
-        .enumerate()
-        .map(|(i, group)| {
-            if i == 0 {
-                group.to_string()
-            } else {
-                format!(
-                    "<tspan dx='{:.1}'>,</tspan><tspan dx='{:.1}'>{group}</tspan>",
-                    -px,
-                    -2.0 * px
-                )
-            }
-        })
-        .collect()
+/// The main figure: 53747 -> "53,747"; from a million, 5000571 -> "5.0M",
+/// so it keeps a large size.
+fn fmt_figure(minutes: u64) -> String {
+    if minutes >= 1_000_000 {
+        format!("{:.1}M", minutes as f64 / 1_000_000.0)
+    } else {
+        fmt_int(minutes)
+    }
 }
 
-/// Builds the full SVG for the image. From top to bottom: the header, the main
-/// figure, the chart, the top lists and the footer, which is centered between the
-/// lists and the bottom of the image. The footer's last line shows the split by
-/// source and, if needed, the estimate note.
-pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> {
+/// Digit groups with their commas and decimal point moved closer: in a
+/// monospaced font they take a whole cell, which leaves a gap around them. `px`
+/// is one font pixel wide.
+fn tight_commas(number: &str, px: f32) -> String {
+    let mut out = String::new();
+    let mut in_group = false;
+    for c in number.chars() {
+        if c == ',' || c == '.' {
+            if in_group {
+                out.push_str("</tspan>");
+            }
+            out.push_str(&format!(
+                "<tspan dx='{:.1}'>{c}</tspan><tspan dx='{:.1}'>",
+                -px,
+                -2.0 * px
+            ));
+            in_group = true;
+        } else {
+            out.push(c);
+        }
+    }
+    if in_group {
+        out.push_str("</tspan>");
+    }
+    out
+}
+
+/// Builds the full SVG for the image. From top to bottom: the date, the main
+/// figure with the totals, the chart and the top lists, which show every entry
+/// of `s`. `top` (one of [`IMAGE_TOPS`]) picks the layout: above 5, the date and
+/// the totals go in a column beside a smaller figure, and the chart shrinks, so
+/// the lists end at the same height in both.
+pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str, top: usize) -> Result<String> {
+    let condensed = top > IMAGE_TOPS[0];
     let m = Measure::new()?;
     let mut svg = Svg {
         body: String::new(),
         accent,
     };
-    let estimated = s.estimated_ms > 0;
 
-    // Header
-    svg.text(CENTER, 279.0, 38.0, true, INK, "middle", "YOUR MUSIC");
     let range = range_label(s.from, s.to);
-    let range_size = if range.chars().count() > 8 {
+    let number = fmt_figure(minutes(s.total_ms));
+    let hours = (s.total_ms as f64 / 3_600_000.0).round() as u64;
+    let totals = format!(
+        "{} · {}",
+        fmt_count(hours, "hour"),
+        fmt_count(s.plays, "play")
+    );
+    let range_size: f32 = if range.chars().count() > 8 {
         56.0
     } else {
         72.0
     };
-    svg.text(
-        CENTER,
-        350.0,
-        range_size,
-        true,
-        INK,
-        "middle",
-        &m.fit(&range, range_size, true, RIGHT - LEFT),
-    );
-
-    // Main figure
-    let number = fmt_int(minutes(s.total_ms));
-    let mut big_size: f32 = 240.0;
-    let commas = number.matches(',').count() as f32;
+    // The main figure's font size: the largest, from `size` down, at which its
+    // widest form, "999,999", fits in `max_w`; every figure gets that size, so
+    // 53,747, 686,596 and 5.0M are all the same height.
     let pixel_w = |size: f32| face_width(&m.number, "0", size) / NUMBER_CELL_PIXELS;
-    while face_width(&m.number, &number, big_size) - commas * COMMA_SAVED_PIXELS * pixel_w(big_size)
-        > RIGHT - LEFT
-        && big_size > 80.0
-    {
-        big_size -= 8.0;
+    let figure_size = |mut size: f32, max_w: f32| {
+        while face_width(&m.number, "999,999", size) - COMMA_SAVED_PIXELS * pixel_w(size) > max_w
+            && size > 80.0
+        {
+            size -= 8.0;
+        }
+        size
+    };
+    // Draws the main figure at `size` with its baseline at `y`, and at `x` with
+    // the SVG `anchor`.
+    let figure = |svg: &mut Svg, size: f32, x: f32, y: f32, anchor: &str| {
+        // Each cell ends in a blank pixel column: move right to make up for it.
+        let shift = match anchor {
+            "end" => pixel_w(size),
+            _ => pixel_w(size) / 2.0,
+        };
+        svg.body.push_str(&format!(
+            "<text x='{:.1}' y='{y}' font-size='{size}' font-family='Tiny5 Mono' font-weight='400' fill='{}' text-anchor='{anchor}'>{}</text>\n",
+            x + shift,
+            svg.accent,
+            tight_commas(&number, pixel_w(size))
+        ));
+    };
+
+    // Where the content starts, below the band stories keep for their own UI.
+    const TOP: f32 = 272.0;
+    if condensed {
+        // Two columns: the date and the totals on the left, the main figure on
+        // the right. The figure always has the width of "999,999" at a fixed
+        // size; the left column shrinks its text to fit the rest.
+        const COL_END: f32 = W - INNER_LEFT;
+        const FIGURE_Y: f32 = 372.0;
+        const TOTALS_Y: f32 = 424.0;
+        let size = (FIGURE_Y - TOP) / NUMBER_CAP_H;
+        let figure_w = face_width(&m.number, "999,999", size) - COMMA_SAVED_PIXELS * pixel_w(size);
+        let left_w = COL_END - INNER_LEFT - figure_w - 32.0;
+        // The date sits centered between the figure's top and the totals' top;
+        // a range of two dates takes two lines.
+        let band = (TOTALS_Y - 32.0 * INTER_CAP_H) - TOP;
+        let mut date = |size: f32, lines: &[&str]| {
+            let gap = size * 1.2;
+            let h = gap * (lines.len() - 1) as f32 + size * INTER_CAP_H;
+            let first_y = TOP + (band - h) / 2.0 + size * INTER_CAP_H;
+            for (i, line) in lines.iter().enumerate() {
+                svg.text(
+                    INNER_LEFT,
+                    first_y + gap * i as f32,
+                    size,
+                    true,
+                    INK,
+                    "start",
+                    line,
+                );
+            }
+        };
+        match range.split_once(" – ") {
+            Some((from, to)) => {
+                let from = format!("{from} –");
+                let widest = m.width(&from, 44.0, true).max(m.width(to, 44.0, true));
+                date(44.0_f32.min(44.0 * left_w / widest), &[&from, to]);
+            }
+            None => {
+                let size = range_size.min(range_size * left_w / m.width(&range, range_size, true));
+                date(size, &[&range]);
+            }
+        }
+        let totals_size = 32.0_f32.min(32.0 * left_w / m.width(&totals, 32.0, false));
+        svg.text(
+            INNER_LEFT,
+            TOTALS_Y,
+            totals_size,
+            false,
+            QUIET,
+            "start",
+            &totals,
+        );
+        figure(&mut svg, size, COL_END, FIGURE_Y, "end");
+        svg.text(
+            COL_END,
+            TOTALS_Y,
+            36.0,
+            false,
+            INK,
+            "end",
+            "minutes listened",
+        );
+    } else {
+        svg.text(
+            CENTER,
+            TOP + range_size * INTER_CAP_H,
+            range_size,
+            true,
+            INK,
+            "middle",
+            &m.fit(&range, range_size, true, RIGHT - LEFT),
+        );
+        // Smaller than full size, it stays centered on the same band.
+        let size = figure_size(352.0, RIGHT - LEFT);
+        let gap = (352.0 - size) * NUMBER_CAP_H;
+        figure(&mut svg, size, CENTER, 604.0 - gap / 2.0, "middle");
+        svg.text(
+            CENTER,
+            684.0,
+            36.0,
+            false,
+            INK,
+            "middle",
+            "minutes listened",
+        );
+        svg.text(CENTER, 728.0, 32.0, false, QUIET, "middle", &totals);
     }
-    svg.body.push_str(&format!(
-        "<text x='{:.1}' y='557' font-size='{big_size}' font-family='Tiny5 Mono' font-weight='400' fill='{}' text-anchor='middle'>{}</text>\n",
-        CENTER + pixel_w(big_size) / 2.0,
-        svg.accent,
-        tight_commas(&number, pixel_w(big_size))
-    ));
-    svg.text(
-        CENTER,
-        636.0,
-        44.0,
-        false,
-        INK,
-        "middle",
-        "minutes listened",
-    );
-    let hours = (s.total_ms as f64 / 3_600_000.0).round() as u64;
-    svg.text(
-        CENTER,
-        682.0,
-        36.0,
-        false,
-        QUIET,
-        "middle",
-        &format!(
-            "{} · {}",
-            fmt_count(hours, "hour"),
-            fmt_count(s.plays, "play")
-        ),
-    );
 
     // Chart by month (or by year for long ranges)
-    chart(&mut svg, &m, s, 778.0);
+    let (chart_y, bars_h, lists_y) = if condensed {
+        (524.0, 64.0, 780.0)
+    } else {
+        (852.0, 206.0, 1260.0)
+    };
+    chart(&mut svg, &m, s, chart_y, bars_h);
 
     // Tops
-    const LISTS_Y: f32 = 1140.0;
     const SONGS_X: f32 = CENTER;
-    let artists_end = list(
+    list(
         &mut svg,
         &m,
-        "Top artists",
+        "Artists",
+        s.distinct_artists,
         &s.top_artists,
         by,
         INNER_LEFT,
         SONGS_X - INNER_LEFT - 20.0,
-        LISTS_Y,
+        lists_y,
     );
-    let songs_end = list(
+    list(
         &mut svg,
         &m,
-        "Top songs",
+        "Songs",
+        s.distinct_tracks,
         &s.top_tracks,
         by,
         SONGS_X,
         RIGHT - SONGS_X,
-        LISTS_Y,
-    );
-
-    // Extra facts and footer, below the top lists
-    const FOOT_CAP_H: f32 = 25.0;
-    const FOOT_LINE_H: f32 = 44.0;
-    let lists_end = artists_end.max(songs_end);
-    let foot_h = FOOT_CAP_H + FOOT_LINE_H;
-    let mut y = lists_end + (H - lists_end - foot_h) / 2.0 + FOOT_CAP_H;
-    let mut extra = format!(
-        "{} · {}",
-        fmt_count(s.distinct_artists as u64, "artist"),
-        fmt_count(s.distinct_tracks as u64, "song")
-    );
-    if let Some((day, _)) = s.top_day {
-        extra.push_str(&format!(" · top day: {}", fmt_day_month(day)));
-    }
-    svg.text(
-        CENTER,
-        y,
-        34.0,
-        false,
-        QUIET,
-        "middle",
-        &m.fit(&extra, 34.0, false, RIGHT - LEFT),
-    );
-
-    let split = if s.by_source.len() > 1 {
-        s.by_source
-            .iter()
-            .map(|(src, ms)| {
-                let pct = (*ms as f64 * 100.0 / s.total_ms as f64).round();
-                format!("{pct}% {}", src.label())
-            })
-            .collect::<Vec<_>>()
-            .join(" · ")
-    } else {
-        s.by_source
-            .first()
-            .map(|(src, _)| format!("{} only", src.label()))
-            .unwrap_or_default()
-    };
-    let foot = if estimated {
-        format!("{split} · estimated minutes")
-    } else {
-        split
-    };
-    y += FOOT_LINE_H;
-    svg.text(
-        CENTER,
-        y,
-        34.0,
-        false,
-        QUIET,
-        "middle",
-        &m.fit(&foot, 34.0, false, RIGHT - LEFT),
+        lists_y,
     );
 
     Ok(format!(
@@ -419,10 +459,11 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str) -> Result<String> 
     ))
 }
 
-/// Draws the chart at `y0`: minutes per month, or per year for more than 24 months.
-/// The bars fill the width up to a maximum, centered as a group, and the top one
-/// shows its value above it in the accent color.
-fn chart(svg: &mut Svg, m: &Measure, s: &Stats, y0: f32) {
+/// Draws the chart with the tallest bar's top at `y0` and bars up to `bars_h`
+/// tall: minutes per month, or per year for more than 24 months. The bars fill
+/// the width up to a maximum, centered as a group; the top one shows its value
+/// above it in the accent color, and the title goes under the labels.
+fn chart(svg: &mut Svg, m: &Measure, s: &Stats, y0: f32, bars_h: f32) {
     let years = s.by_year();
     let bars: Vec<(String, u64)> = match &years {
         Some(years) => years.iter().map(|(y, ms)| (y.to_string(), *ms)).collect(),
@@ -434,16 +475,15 @@ fn chart(svg: &mut Svg, m: &Measure, s: &Stats, y0: f32) {
     };
 
     let title = if years.is_some() {
-        "Minutes per year"
+        "minutes per year"
     } else {
-        "Minutes per month"
+        "minutes per month"
     };
-    svg.text(CENTER, y0, 38.0, true, INK, "middle", title);
 
     let max = bars.iter().map(|b| b.1).max().unwrap_or(0).max(1);
     let max_i = bars.iter().position(|b| b.1 == max).unwrap_or(0);
-    let top = y0 + 66.0;
-    let base = y0 + 226.0;
+    let top = y0;
+    let base = top + bars_h;
     const GAP: f32 = 16.0;
     const MAX_BAR_W: f32 = 180.0;
     let n = bars.len() as f32;
@@ -479,6 +519,7 @@ fn chart(svg: &mut Svg, m: &Measure, s: &Stats, y0: f32) {
         "middle",
         &fmt_int(minutes(max)),
     );
+    svg.text(CENTER, base + 96.0, 36.0, false, INK, "middle", title);
 }
 
 /// The chart's labels and their font size, so that none is wider than its
@@ -527,38 +568,40 @@ fn song_info(
     (m.fit(artist, size, false, artist_w), number, unit)
 }
 
-/// Draws a top list as a column and returns the y where it ends. Songs add a
-/// second line with their artist and the figure they rank by. Ranks and single-line
-/// names sit halfway down a two-line song row.
+/// Draws a top list as a column, under its title and the `total` of distinct
+/// entries. Songs add a second line with their artist and the figure they rank
+/// by. Ranks and single-line names sit halfway down a two-line song row.
 #[allow(clippy::too_many_arguments)]
 fn list(
     svg: &mut Svg,
     m: &Measure,
     title: &str,
+    total: usize,
     items: &[Ranked],
     by: RankBy,
     x0: f32,
     w: f32,
     y0: f32,
-) -> f32 {
+) {
     const NAME: f32 = 36.0;
     const INFO: f32 = 28.0;
     const INFO_DY: f32 = 40.0;
     const ROW_H: f32 = 96.0;
     const RANK: f32 = 42.0;
     const ARTIST: f32 = 40.0;
-    const RANK_W: f32 = 50.0;
-    /// Inter's cap height, as a fraction of the font size.
-    const CAP_H: f32 = 0.727;
 
-    svg.text(x0, y0, 44.0, true, INK, "start", title);
-    let x = x0 + RANK_W;
-    let max_w = w - RANK_W;
+    svg.body.push_str(&format!(
+        "<text x='{x0:.1}' y='{y0:.1}' font-size='44' font-weight='700' fill='{INK}'>{title}<tspan font-size='32' font-weight='400' fill='{QUIET}' dx='12'>({} total)</tspan></text>\n",
+        fmt_int(total as u64)
+    ));
+    // Wide enough for the last rank: "10" needs more room than "5".
+    let rank_w = (m.width(&items.len().to_string(), RANK, true) + 16.0).max(50.0);
+    let x = x0 + rank_w;
+    let max_w = w - rank_w;
     let mut y = y0 + 64.0;
-    let mut end = y;
-    for (i, item) in items.iter().take(IMAGE_TOP).enumerate() {
-        let row_mid = y + (INFO_DY - NAME * CAP_H) / 2.0;
-        let centered = |size: f32| row_mid + size * CAP_H / 2.0;
+    for (i, item) in items.iter().enumerate() {
+        let row_mid = y + (INFO_DY - NAME * INTER_CAP_H) / 2.0;
+        let centered = |size: f32| row_mid + size * INTER_CAP_H / 2.0;
         svg.text(
             x0,
             centered(RANK),
@@ -574,7 +617,6 @@ fn list(
         };
         let name = m.fit(&item.name, name_size, false, max_w);
         svg.text(x, name_y, name_size, false, INK, "start", &name);
-        end = name_y;
         if let Some(detail) = &item.detail {
             let (artist, number, unit) = song_info(m, detail, item, by, INFO, max_w);
             let accent = svg.accent;
@@ -584,11 +626,9 @@ fn list(
                 esc(&number),
                 esc(&artist)
             ));
-            end = y + INFO_DY;
         }
         y += ROW_H;
     }
-    end
 }
 
 /// Converts the SVG to PNG.
@@ -679,6 +719,23 @@ mod tests {
             "1<tspan dx='-10.0'>,</tspan><tspan dx='-20.0'>234</tspan>\
              <tspan dx='-10.0'>,</tspan><tspan dx='-20.0'>567</tspan>"
         );
+    }
+
+    #[test]
+    fn tightens_the_decimal_point() {
+        assert_eq!(
+            tight_commas("5.0M", 10.0),
+            "5<tspan dx='-10.0'>.</tspan><tspan dx='-20.0'>0M</tspan>"
+        );
+    }
+
+    #[test]
+    fn main_figure_shortens_from_a_million() {
+        assert_eq!(fmt_figure(53_747), "53,747");
+        assert_eq!(fmt_figure(999_999), "999,999");
+        assert_eq!(fmt_figure(1_000_000), "1.0M");
+        assert_eq!(fmt_figure(5_000_571), "5.0M");
+        assert_eq!(fmt_figure(3_111_333), "3.1M");
     }
 
     #[test]
