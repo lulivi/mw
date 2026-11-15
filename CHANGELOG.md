@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/lulivi/mw/compare/v0.2.7...v0.3.0) - 2026-11-15
+
+### Added
+
+- *(image)* [**breaking**] rework the image and add a top 10 layout ([#70](https://github.com/lulivi/mw/pull/70))
+
 ## [0.2.7](https://github.com/lulivi/mw/compare/v0.2.6...v0.2.7) - 2026-11-14
 
 ### Fixed
