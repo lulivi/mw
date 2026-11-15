@@ -31,12 +31,14 @@ Made from a fictional listening history (2021–2025; YouTube Music from 2024).
   <a href="docs/samples/range.png"><img src="docs/samples/range.png" width="200" alt="Sample 2: Jun 2024 to May 2025, both sources"></a>
   <a href="docs/samples/history.png"><img src="docs/samples/history.png" width="200" alt="Sample 3: whole history, by year"></a>
   <a href="docs/samples/minutes.png"><img src="docs/samples/minutes.png" width="200" alt="Sample 4: 2025 ranked by minutes"></a>
+  <a href="docs/samples/top10.png"><img src="docs/samples/top10.png" width="200" alt="Sample 5: 2025, top 10"></a>
 </p>
 
 1. One year, Spotify only: `--year 2025 --source spotify`
 2. Custom range, both sources (estimated minutes): `--from 2024-06-01 --to 2025-05-31 --color purple`
 3. Whole history; past 24 months the chart goes by year: `--color blue`
 4. Top lists by minutes: `--year 2025 --rank-by minutes --color green`
+5. Top 10 lists, with the date and totals beside the figure: `--year 2025 --top 10 --color pink`
 
 ## Installation
 
@@ -104,7 +106,7 @@ On Windows use `mw.exe`; after `cargo install`, just `mw`. Run `mw --help` for e
 ## How it counts
 
 - Spotify plays shorter than 30 seconds don't count (they're skips), same as the official Wrapped. Podcasts and audiobooks are ignored.
-- YouTube Music doesn't record how long you listened to each song, only that you played it. Each play counts `--ytm-avg-minutes` minutes, which is why the total is marked as estimated when YouTube Music is included ("≈" in the terminal, "estimated minutes" in the image).
+- YouTube Music doesn't record how long you listened to each song, only that you played it. Each play counts `--ytm-avg-minutes` minutes, which is why the total is marked as estimated when YouTube Music is included ("≈" in the terminal, a note under the image on the web page).
 - Songs in the [song database](data/README.md) count their song length instead, assuming you listened to the whole song. A play is matched by video ID (then the database names replace the Takeout ones, which carry wording like "Watched" in your account language) or else by artist and title. `mw` keeps a copy of the database in your cache folder and, on every run, downloads it again only if it changed: with no connection it uses that copy, and with no copy every play keeps the estimate. `--offline` uses only the copy; `--db <URL|PATH>` reads another database.
 - Artists and songs are merged across sources ignoring case, accents and YouTube add-ons like " - Topic" or "(Official Video)".
 
