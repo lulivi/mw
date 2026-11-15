@@ -115,6 +115,32 @@ fn color_changes_the_image() {
 }
 
 #[test]
+fn image_tops_are_5_or_10() {
+    let dir = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        bin()
+            .arg("--spotify")
+            .arg(fixtures().join("spotify"))
+            .arg("--out")
+            .arg(dir.path().join("w.png"))
+            .arg("--overwrite")
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let refused = run(&["--top", "3"]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--no-image"));
+    assert!(run(&["--top", "3", "--no-image"]).status.success());
+
+    let top10 = run(&["--top", "10"]);
+    assert!(top10.status.success());
+    let png = std::fs::read(dir.path().join("w.png")).unwrap();
+    assert_eq!(png_size(&png), (1080, 1920));
+}
+
+#[test]
 fn keeps_an_existing_image_unless_overwriting() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("w.png");

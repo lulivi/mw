@@ -56,7 +56,11 @@ pub fn stats(s: &Stats) -> String {
         }
     }
 
-    w!(out, "\nTop artists:");
+    w!(
+        out,
+        "\nTop artists ({} total):",
+        fmt_int(s.distinct_artists as u64)
+    );
     for (i, a) in s.top_artists.iter().enumerate() {
         w!(
             out,
@@ -67,7 +71,11 @@ pub fn stats(s: &Stats) -> String {
             fmt_count(a.plays, "play")
         );
     }
-    w!(out, "\nTop songs:");
+    w!(
+        out,
+        "\nTop songs ({} total):",
+        fmt_int(s.distinct_tracks as u64)
+    );
     for (i, t) in s.top_tracks.iter().enumerate() {
         let artist = t.detail.as_deref().unwrap_or("");
         w!(
@@ -81,12 +89,7 @@ pub fn stats(s: &Stats) -> String {
         );
     }
 
-    w!(
-        out,
-        "\nDistinct artists: {} · Distinct songs: {}",
-        fmt_int(s.distinct_artists as u64),
-        fmt_int(s.distinct_tracks as u64)
-    );
+    w!(out, "");
     if let Some((day, ms)) = s.top_day {
         w!(out, "Top day: {day} ({} min)", fmt_int(minutes(ms)));
     }

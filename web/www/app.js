@@ -122,6 +122,7 @@ form.addEventListener("submit", (e) => {
     from: period === "year" ? `${year}-01-01` : period === "range" ? form.from.value : "",
     to: period === "year" ? `${year}-12-31` : period === "range" ? form.to.value : "",
     rankBy: form.rankBy.value,
+    top: Number(form.top.value),
     color: form.color.value,
     tz: form.tz.value,
   };
