@@ -51,3 +51,7 @@ _Avoid_: Web app, site, frontend
 **Top list**:
 The most listened artists or songs, best first, ranked by plays or by minutes.
 _Avoid_: Ranking, chart
+
+**Accent**:
+The color the listener picks, one of a fixed set, for the main figure, the highlights and the red of the logo, on the image and the web page alike.
+_Avoid_: Theme color, highlight color

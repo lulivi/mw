@@ -2,7 +2,7 @@
 //!
 //! Mobile (story) format: 1080×1920. The 250 px bands at the top and bottom are
 //! where stories show their own UI: the top one is left empty, and only the
-//! footer enters the bottom one, next to the reply box.
+//! logo enters the bottom one, where the reply box may cover it on short screens.
 
 use std::sync::Arc;
 
@@ -20,6 +20,12 @@ const FONT_BOLD: &[u8] = include_bytes!("../assets/Inter-Bold.otf");
 /// Tiny5 Mono Regular (SIL Open Font License 1.1, see assets/OFL-Tiny5Mono.txt),
 /// used only for the main figure. Its pixel rows are crisp at multiples of 8 px.
 const FONT_NUMBER: &[u8] = include_bytes!("../assets/Tiny5Mono-Regular.otf");
+/// The mw logo, shared with the web page. Its colors are the CSS variables
+/// `--logo-ink` and `--accent`, which [`build_svg`] replaces.
+const LOGO: &str = include_str!("../assets/logo.svg");
+/// Size of the logo's viewBox.
+const LOGO_W: f32 = 943.0;
+const LOGO_H: f32 = 371.0;
 
 /// Accent colors of the image (`--color`), by name, as SVG hex strings.
 pub const ACCENTS: [(&str, &str); 7] = [
@@ -279,9 +285,9 @@ fn tight_commas(number: &str, px: f32) -> String {
 
 /// Builds the full SVG for the image. From top to bottom: the date, the main
 /// figure with the totals, the chart and the top lists, which show every entry
-/// of `s`. `top` (one of [`IMAGE_TOPS`]) picks the layout: above 5, the date and
-/// the totals go in a column beside a smaller figure, and the chart shrinks, so
-/// the lists end at the same height in both.
+/// of `s`, with the logo under them. `top` (one of [`IMAGE_TOPS`]) picks the
+/// layout: above 5, the date and the totals go in a column beside a smaller
+/// figure, and the chart shrinks, so the lists end at the same height in both.
 pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str, top: usize) -> Result<String> {
     let condensed = top > IMAGE_TOPS[0];
     let m = Measure::new()?;
@@ -450,6 +456,23 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str, top: usize) -> Res
         SONGS_X,
         RIGHT - SONGS_X,
         lists_y,
+    );
+
+    // Logo, centered under the lists
+    const LOGO_SHOWN_W: f32 = 240.0;
+    let logo_h = LOGO_H * LOGO_SHOWN_W / LOGO_W;
+    svg.body.push_str(
+        &LOGO
+            .replace("var(--logo-ink)", INK)
+            .replace("var(--accent)", svg.accent)
+            .replacen(
+                "<svg ",
+                &format!(
+                    "<svg x='{:.1}' y='1800' width='{LOGO_SHOWN_W}' height='{logo_h:.1}' ",
+                    CENTER - LOGO_SHOWN_W / 2.0
+                ),
+                1,
+            ),
     );
 
     Ok(format!(
@@ -650,6 +673,31 @@ pub fn png(svg: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn logo_takes_the_image_colors() {
+        let day = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let s = Stats {
+            from: day,
+            to: day,
+            total_ms: 60_000,
+            estimated_ms: 0,
+            plays: 1,
+            by_month: vec![((2025, 1), 1)],
+            top_artists: vec![],
+            top_tracks: vec![],
+            distinct_artists: 0,
+            distinct_tracks: 0,
+            top_day: None,
+            top_hour: None,
+            by_source: vec![],
+        };
+        let svg = build_svg(&s, RankBy::Plays, "#5AA9FF", 5).unwrap();
+        assert!(!svg.contains("var("), "a CSS variable is left in the image");
+        assert!(svg.contains("style=\"fill:#5AA9FF\""));
+        assert!(svg.contains(&format!("style=\"fill:{INK}\"")));
+        png(&svg).unwrap();
+    }
 
     #[test]
     fn formats_numbers() {
