@@ -31,6 +31,13 @@ $("theme").addEventListener("click", () => {
     localStorage.setItem("theme", root.dataset.theme);
   } catch {}
   showTheme();
+
+// Color: of the page and the image, remembered on this device only.
+$("color").addEventListener("change", () => {
+  try {
+    localStorage.setItem("color", form.color.value);
+  } catch {}
+});
 });
 showTheme();
 
