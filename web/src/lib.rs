@@ -17,8 +17,6 @@ use wasm_bindgen::prelude::*;
 /// Minutes each YouTube Music play counts when the song database doesn't know
 /// the song, as `mw`'s default `--ytm-avg-minutes`.
 const AVG_MINUTES: f64 = 3.5;
-/// Size of the top lists, as `mw`'s default `--top`.
-const TOP: usize = 5;
 
 /// The files the user added and the song database.
 #[wasm_bindgen]
@@ -92,17 +90,21 @@ impl Session {
 
     /// Makes the image from the files added, with `mw`'s options: `source`
     /// (`all`, `spotify` or `ytm`), `from` and `to` (`YYYY-MM-DD`, or empty for
-    /// no limit), `rank_by` (`plays` or `minutes`), `color` and `tz`.
+    /// no limit), `rank_by` (`plays` or `minutes`), `top` (5 or 10), `color`
+    /// and `tz`.
+    #[allow(clippy::too_many_arguments)]
     pub fn create(
         &self,
         source: &str,
         from: &str,
         to: &str,
         rank_by: &str,
+        top: usize,
         color: &str,
         tz: &str,
     ) -> Result<Recap, JsError> {
-        self.recap(source, from, to, rank_by, color, tz).map_err(js)
+        self.recap(source, from, to, rank_by, top, color, tz)
+            .map_err(js)
     }
 }
 
@@ -113,12 +115,14 @@ impl Session {
     }
 
     /// [`Session::create`], with Rust errors.
+    #[allow(clippy::too_many_arguments)]
     fn recap(
         &self,
         source: &str,
         from: &str,
         to: &str,
         rank_by: &str,
+        top: usize,
         color: &str,
         tz: &str,
     ) -> Result<Recap> {
@@ -150,6 +154,9 @@ impl Session {
             "minutes" => RankBy::Minutes,
             _ => bail!("unknown ranking {rank_by}"),
         };
+        if !render::IMAGE_TOPS.contains(&top) {
+            bail!("unknown top list size {top}");
+        }
         let accent = render::accent(color).ok_or_else(|| anyhow!("unknown color {color}"))?;
         let tz = time_zone(tz)?;
 
@@ -187,10 +194,17 @@ impl Session {
             source,
             tz,
         };
-        let Some(stats) = stats::compute(&plays, &filters, TOP, rank_by) else {
+        let Some(stats) = stats::compute(&plays, &filters, top, rank_by) else {
             bail!("No plays in that date range.");
         };
-        let svg = render::build_svg(&stats, rank_by, accent, TOP)?;
+        let svg = render::build_svg(&stats, rank_by, accent, top)?;
+        if stats.estimated_ms > 0 {
+            notes.push(format!(
+                "Estimated: {} of the {} minutes, from YouTube Music plays the song database doesn't know",
+                fmt_int(render::minutes(stats.estimated_ms)),
+                fmt_int(render::minutes(stats.total_ms))
+            ));
+        }
         Ok(Recap {
             png: render::png(&svg)?,
             text: text::stats(&stats),
@@ -276,21 +290,37 @@ mod tests {
         assert!(s.has_youtube());
 
         let err = s
-            .recap("spotify", "", "", "plays", "orange", "UTC")
+            .recap("spotify", "", "", "plays", 5, "orange", "UTC")
             .err()
             .unwrap();
         assert!(err.to_string().starts_with("Only Spotify needs"), "{err}");
-        let err = s.recap("all", "2025-03-01", "2025-02-01", "plays", "orange", "UTC");
+        let err = s.recap(
+            "all",
+            "2025-03-01",
+            "2025-02-01",
+            "plays",
+            5,
+            "orange",
+            "UTC",
+        );
         assert!(err.err().unwrap().to_string().contains("is after"));
 
-        let r = s.recap("all", "", "", "plays", "orange", "UTC").unwrap();
+        let r = s.recap("all", "", "", "plays", 5, "orange", "UTC").unwrap();
         assert_eq!(&r.png[1..4], b"PNG");
         assert!(r.text.contains("Minutes listened"));
         assert!(r.notes[0].contains("could not be downloaded"));
+        assert!(
+            r.notes[1].starts_with("Estimated: 4 of the 4 minutes"),
+            "{:?}",
+            r.notes
+        );
+        assert!(s.recap("all", "", "", "plays", 10, "orange", "UTC").is_ok());
+        let err = s.recap("all", "", "", "plays", 3, "orange", "UTC");
+        assert!(err.err().unwrap().to_string().contains("top list size"));
 
         s.remove(0);
         let err = s
-            .recap("all", "", "", "plays", "orange", "UTC")
+            .recap("all", "", "", "plays", 5, "orange", "UTC")
             .err()
             .unwrap();
         assert!(err.to_string().contains("first"), "{err}");
