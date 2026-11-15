@@ -127,17 +127,10 @@ header { display: flow-root; margin-bottom: 2.5rem; }
   gap: 1rem;
   margin-bottom: 1rem;
 }
-/* The logo, black or white as the theme is light or dark. */
+/* The logo: letters in the text color, the rest in the accent. */
 .logo { margin: 0; line-height: 0; }
-.logo img { width: 15rem; height: auto; }
-@container (min-width: 30rem) { .logo img { width: 20rem; } }
-.logo-dark { display: none; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .logo-light { display: none; }
-  :root:not([data-theme="light"]) .logo-dark { display: inline; }
-}
-:root[data-theme="dark"] .logo-light { display: none; }
-:root[data-theme="dark"] .logo-dark { display: inline; }
+.logo svg { width: 15rem; height: auto; stroke: none; --logo-ink: var(--fg); }
+@container (min-width: 30rem) { .logo svg { width: 20rem; } }
 /* Theme button: an icon for the theme in use; its name is in its label. */
 .theme {
   flex: none;
