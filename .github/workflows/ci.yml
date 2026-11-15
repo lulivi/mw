@@ -17,6 +17,13 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install actionlint
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSLo actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz" | sha256sum -c -
+          tar xzf actionlint.tar.gz actionlint
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - run: ./scripts/lint.sh
       - run: ./scripts/test.sh
 
