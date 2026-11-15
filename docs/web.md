@@ -63,7 +63,7 @@ version.
 
 ## Publishing
 
-The `pages` job in `.github/workflows/ci.yml` builds the page and publishes it
-to GitHub Pages each time release-plz makes a release, so the page always runs
-the latest release. The song database isn't part of it: the page downloads it
-from `main`, so new songs reach the page without a release.
+CI (`.github/workflows/ci.yml`) builds the page on every run, PRs included, and
+publishes it to GitHub Pages each time release-plz makes a release, so the page
+always runs the latest release. The song database isn't part of it: the page
+downloads it from `main`, so new songs reach the page without a release.

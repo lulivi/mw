@@ -16,11 +16,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      - name: Install actionlint
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSLo actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz" | sha256sum -c -
+          tar xzf actionlint.tar.gz actionlint
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - run: ./scripts/lint.sh
       - run: ./scripts/test.sh
-      - run: cargo build -p mw-web --target wasm32-unknown-unknown
 
   release-pr:
     if: github.event_name == 'push'
@@ -41,45 +46,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
 
-  release:
-    if: github.event_name == 'push'
-    needs: check
+  # The release binaries, one runner per target, on PRs too so a broken target never
+  # reaches a release. This list is the release targets; scripts/dist.sh has none.
+  dist:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      released: ${{ steps.release-plz.outputs.releases_created }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+          - x86_64-pc-windows-gnu
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v5
+      - run: ./scripts/dist.sh ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
         with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - id: release-plz
-        uses: release-plz/action@v0.5
-        with:
-          command: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - if: steps.release-plz.outputs.releases_created == 'true'
-        run: |
-          ./scripts/dist.sh
-          gh release upload "$TAG" dist/*.zip dist/*.tar.gz dist/*.sha256
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ fromJSON(steps.release-plz.outputs.releases)[0].tag }}
+          name: dist-${{ matrix.target }}
+          path: dist/mw-*
 
-  # Publishes the web page with each release.
-  pages:
-    needs: release
-    if: needs.release.outputs.released == 'true'
+  # The web page, on PRs too.
+  web:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -96,5 +86,58 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: target/web
+
+  # Waits for the builds so no release is created without its binaries and page.
+  release:
+    if: github.event_name == 'push'
+    needs: [check, dist, web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      released: ${{ steps.release-plz.outputs.releases_created }}
+      tag: ${{ steps.release-plz.outputs.releases_created == 'true' && fromJSON(steps.release-plz.outputs.releases)[0].tag || '' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - id: release-plz
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Uploads the binaries dist built to the release.
+  publish:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - run: gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag }}
+
+  # Deploys the page web built.
+  pages:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
         uses: actions/deploy-pages@v5
