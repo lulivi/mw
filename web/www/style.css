@@ -34,6 +34,8 @@
   /* The color chosen for the image; all are light, so text on them is dark. */
   --accent: #FF6B4A;
   --on-accent: #101418;
+  /* The logo's gray accent: the image's one is too light on the light theme. */
+  --logo-gray: #8A929D;
   --focus: var(--fg);
   --radius: 12px;
   font: 400 1rem/1.6 "Inter", system-ui, sans-serif;
@@ -48,11 +50,13 @@
     --card: #1f242a;
     --line: #2e353d;
     --error: #ff8a80;
+    --logo-gray: #E3E7EB;
   }
 }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --logo-gray: #E3E7EB;
   --bg: #171b20;
   --fg: #e8eaed;
   --muted: #9aa3ad;
@@ -127,17 +131,13 @@ header { display: flow-root; margin-bottom: 2.5rem; }
   gap: 1rem;
   margin-bottom: 1rem;
 }
-/* The logo, black or white as the theme is light or dark. */
+/* The logo: letters in the text color, the rest in the accent. */
 .logo { margin: 0; line-height: 0; }
-.logo img { width: 15rem; height: auto; }
-@container (min-width: 30rem) { .logo img { width: 20rem; } }
-.logo-dark { display: none; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .logo-light { display: none; }
-  :root:not([data-theme="light"]) .logo-dark { display: inline; }
-}
-:root[data-theme="dark"] .logo-light { display: none; }
-:root[data-theme="dark"] .logo-dark { display: inline; }
+.logo svg { width: 15rem; height: auto; stroke: none; --logo-ink: var(--fg); }
+@container (min-width: 30rem) { .logo svg { width: 20rem; } }
+:root:has([name="color"][value="gray"]:checked) .logo svg { --accent: var(--logo-gray); }
+/* The color of the page and the image, under the logo. */
+.color-pick { max-width: 22rem; margin-bottom: 1rem; }
 /* Theme button: an icon for the theme in use; its name is in its label. */
 .theme {
   flex: none;

@@ -18,8 +18,7 @@
     <header>
       <div class="title-row">
         <h1 class="logo">
-          <img class="logo-light" src="logo-light.webp" alt="Music Wrapped" width="960" height="389">
-          <img class="logo-dark" src="logo-dark.webp" alt="Music Wrapped" width="960" height="389">
+          <svg role="img" aria-label="Music Wrapped" viewBox="0 0 943 371"><use href="logo.svg#logo"/></svg>
         </h1>
         <button id="theme" class="theme" type="button" aria-label="Theme: Device" title="Theme: Device">
           <svg class="icon-device" aria-hidden="true" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
@@ -27,6 +26,25 @@
           <svg class="icon-dark" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
         </button>
       </div>
+      <fieldset id="color" class="color-pick">
+        <legend class="visually-hidden">Color</legend>
+        <div class="colors">
+          <label style="--c:#FF6B4A"><input type="radio" form="options" name="color" value="orange" checked><span class="visually-hidden">Orange</span></label>
+          <label style="--c:#B388FF"><input type="radio" form="options" name="color" value="purple"><span class="visually-hidden">Purple</span></label>
+          <label style="--c:#5AA9FF"><input type="radio" form="options" name="color" value="blue"><span class="visually-hidden">Blue</span></label>
+          <label style="--c:#3DDC97"><input type="radio" form="options" name="color" value="green"><span class="visually-hidden">Green</span></label>
+          <label style="--c:#FF6FB5"><input type="radio" form="options" name="color" value="pink"><span class="visually-hidden">Pink</span></label>
+          <label style="--c:#FF5A5F"><input type="radio" form="options" name="color" value="red"><span class="visually-hidden">Red</span></label>
+          <label style="--c:#E3E7EB"><input type="radio" form="options" name="color" value="gray"><span class="visually-hidden">Gray</span></label>
+        </div>
+      </fieldset>
+      <script>
+        // The color chosen on an earlier visit, before the page draws.
+        try {
+          const color = localStorage.getItem("color");
+          for (const r of document.getElementsByName("color")) if (color) r.checked = r.value === color;
+        } catch {}
+      </script>
       <img class="thumb" src="sample.png" alt="" width="1080" height="1920">
       <p class="lede">Your listening recap, as an image, from your Spotify and YouTube Music data.</p>
     </header>
@@ -117,18 +135,6 @@
             <div class="segmented">
               <label><input type="radio" name="top" value="5" checked><span>Top 5</span></label>
               <label><input type="radio" name="top" value="10"><span>Top 10</span></label>
-            </div>
-          </fieldset>
-          <fieldset>
-            <legend>Color</legend>
-            <div class="colors">
-              <label style="--c:#FF6B4A"><input type="radio" name="color" value="orange" checked><span class="visually-hidden">Orange</span></label>
-              <label style="--c:#B388FF"><input type="radio" name="color" value="purple"><span class="visually-hidden">Purple</span></label>
-              <label style="--c:#5AA9FF"><input type="radio" name="color" value="blue"><span class="visually-hidden">Blue</span></label>
-              <label style="--c:#3DDC97"><input type="radio" name="color" value="green"><span class="visually-hidden">Green</span></label>
-              <label style="--c:#FF6FB5"><input type="radio" name="color" value="pink"><span class="visually-hidden">Pink</span></label>
-              <label style="--c:#FF5A5F"><input type="radio" name="color" value="red"><span class="visually-hidden">Red</span></label>
-              <label style="--c:#E3E7EB"><input type="radio" name="color" value="gray"><span class="visually-hidden">Gray</span></label>
             </div>
           </fieldset>
           <label class="field">Time zone

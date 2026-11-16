@@ -11,6 +11,9 @@ let nextId = 0;
 /** Whether the files added can make an image (they hold a history and agree). */
 let ready = false;
 let imageUrl;
+/** Whether an image is being made: its progress shows in the button, so the
+ * options never move. */
+let creating = false;
 const smooth = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
 /** Whether the page is one column (a phone), with the image at the end. */
 const oneColumn = matchMedia("(max-width: 899px)");
@@ -31,6 +34,13 @@ $("theme").addEventListener("click", () => {
     localStorage.setItem("theme", root.dataset.theme);
   } catch {}
   showTheme();
+
+// Color: of the page and the image, remembered on this device only.
+$("color").addEventListener("change", () => {
+  try {
+    localStorage.setItem("color", form.color.value);
+  } catch {}
+});
 });
 showTheme();
 
@@ -126,13 +136,24 @@ form.addEventListener("submit", (e) => {
     color: form.color.value,
     tz: form.tz.value,
   };
+  creating = true;
+  $("create").disabled = true;
   worker.postMessage({ type: "create", options });
 });
 
+/** Gives the button back once the image is made, or failed. */
+function created() {
+  creating = false;
+  $("create").disabled = false;
+  $("create").textContent = "Create image";
+}
+
 // Messages from the worker.
 worker.onmessage = ({ data: msg }) => {
-  if (msg.type === "progress") $("status").textContent = msg.text;
-  else if (msg.type === "file") {
+  if (msg.type === "progress") {
+    if (creating) $("create").textContent = msg.text || "Create image";
+    else $("status").textContent = msg.text;
+  } else if (msg.type === "file") {
     const row = $(`file-${msg.id}`);
     if (msg.error) show(row, [], msg.error);
     else show(row, msg.lines);
@@ -140,14 +161,18 @@ worker.onmessage = ({ data: msg }) => {
     setReady(!msg.error && msg.years.length > 0, msg.years);
     $("status").textContent = msg.error ?? "";
     $("status").classList.toggle("error", Boolean(msg.error));
-  } else if (msg.type === "result") result(msg);
-  else if (msg.type === "error") {
+  } else if (msg.type === "result") {
+    created();
+    result(msg);
+  } else if (msg.type === "error") {
+    created();
     $("status").textContent = "";
     $("error").hidden = false;
     $("error").textContent = msg.message;
   }
 };
 worker.onerror = (e) => {
+  created();
   $("status").textContent = `Something went wrong: ${e.message}`;
   $("status").classList.add("error");
 };
