@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/lulivi/mw/compare/v0.3.1...v0.4.0) - 2026-11-16
+
+### Added
+
+- show the logo in the image and pick the color for the whole page ([#78](https://github.com/lulivi/mw/pull/78))
+- *(db)* [**breaking**] merge export-spotify and export-ytm into db export ([#76](https://github.com/lulivi/mw/pull/76))
+
 ## [0.3.1](https://github.com/lulivi/mw/compare/v0.3.0...v0.3.1) - 2026-11-15
 
 ### Other
