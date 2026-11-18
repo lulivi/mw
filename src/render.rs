@@ -215,6 +215,22 @@ struct Svg {
     body: String,
     /// Accent color chosen by the user.
     accent: &'static str,
+    /// The chart's bars with plays.
+    bars: Vec<Bar>,
+}
+
+/// A bar of the chart: where it is on the image, label included, and the
+/// whole calendar month or year it stands for.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bar {
+    /// Left, top, width and height, in px of the image.
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    /// First and last day of the bar's month or year.
+    pub from: NaiveDate,
+    pub to: NaiveDate,
 }
 
 impl Svg {
@@ -288,12 +304,20 @@ fn tight_commas(number: &str, px: f32) -> String {
 /// of `s`, with the logo under them. `top` (one of [`IMAGE_TOPS`]) picks the
 /// layout: above 5, the date and the totals go in a column beside a smaller
 /// figure, and the chart shrinks, so the lists end at the same height in both.
-pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str, top: usize) -> Result<String> {
+/// Also returns the chart's bars with plays, for the web page to make them
+/// clickable.
+pub fn build_svg(
+    s: &Stats,
+    by: RankBy,
+    accent: &'static str,
+    top: usize,
+) -> Result<(String, Vec<Bar>)> {
     let condensed = top > IMAGE_TOPS[0];
     let m = Measure::new()?;
     let mut svg = Svg {
         body: String::new(),
         accent,
+        bars: vec![],
     };
 
     let range = range_label(s.from, s.to);
@@ -475,11 +499,12 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str, top: usize) -> Res
             ),
     );
 
-    Ok(format!(
+    let image = format!(
         "<svg xmlns='http://www.w3.org/2000/svg' width='{W}' height='{H}' viewBox='0 0 {W} {H}' font-family='Inter'>\n\
          <rect width='100%' height='100%' fill='{BG}'/>\n{}</svg>\n",
         svg.body
-    ))
+    );
+    Ok((image, svg.bars))
 }
 
 /// Draws the chart with the tallest bar's top at `y0` and bars up to `bars_h`
@@ -488,12 +513,26 @@ pub fn build_svg(s: &Stats, by: RankBy, accent: &'static str, top: usize) -> Res
 /// above it in the accent color, and the title goes under the labels.
 fn chart(svg: &mut Svg, m: &Measure, s: &Stats, y0: f32, bars_h: f32) {
     let years = s.by_year();
-    let bars: Vec<(String, u64)> = match &years {
-        Some(years) => years.iter().map(|(y, ms)| (y.to_string(), *ms)).collect(),
+    let day = |y: i32, mo: u32, d: u32| NaiveDate::from_ymd_opt(y, mo, d).expect("a valid date");
+    // Each bar: its label, minutes and the first and last day of its period.
+    let bars: Vec<(String, u64, NaiveDate, NaiveDate)> = match &years {
+        Some(years) => years
+            .iter()
+            .map(|(y, ms)| (y.to_string(), *ms, day(*y, 1, 1), day(*y, 12, 31)))
+            .collect(),
         None => s
             .by_month
             .iter()
-            .map(|((_, mo), ms)| (MONTH_INITIALS[(*mo - 1) as usize].to_string(), *ms))
+            .map(|((y, mo), ms)| {
+                let first = day(*y, *mo, 1);
+                let last = first + chrono::Months::new(1) - chrono::Days::new(1);
+                (
+                    MONTH_INITIALS[(*mo - 1) as usize].to_string(),
+                    *ms,
+                    first,
+                    last,
+                )
+            })
             .collect(),
     };
 
@@ -516,8 +555,21 @@ fn chart(svg: &mut Svg, m: &Measure, s: &Stats, y0: f32, bars_h: f32) {
     let start = CENTER - (n * slot - GAP) / 2.0;
     let (labels, label_size) = chart_labels(m, bars.iter().map(|b| b.0.clone()).collect(), slot);
 
-    for (i, ((_, ms), label)) in bars.iter().zip(&labels).enumerate() {
+    for (i, ((_, ms, from, to), label)) in bars.iter().zip(&labels).enumerate() {
         let cx = start + slot * i as f32 + bw / 2.0;
+        // From just under the top one's value, which can be wider than the
+        // slot, to below the labels, across the whole slot, with room for the
+        // page's outline; none for a period without plays.
+        if *ms > 0 {
+            svg.bars.push(Bar {
+                x: cx - slot / 2.0,
+                y: top - 6.0,
+                w: slot,
+                h: bars_h + 68.0,
+                from: *from,
+                to: *to,
+            });
+        }
         let h = ((*ms as f32 / max as f32) * (base - top)).max(if *ms > 0 { 6.0 } else { 2.0 });
         let fill = if i == max_i { svg.accent } else { BAR };
         svg.rect(cx - bw / 2.0, base - h, bw, h, (bw / 6.0).min(8.0), fill);
@@ -692,11 +744,63 @@ mod tests {
             top_hour: None,
             by_source: vec![],
         };
-        let svg = build_svg(&s, RankBy::Plays, "#5AA9FF", 5).unwrap();
+        let (svg, bars) = build_svg(&s, RankBy::Plays, "#5AA9FF", 5).unwrap();
+        assert_eq!(bars.len(), 1);
         assert!(!svg.contains("var("), "a CSS variable is left in the image");
         assert!(svg.contains("style=\"fill:#5AA9FF\""));
         assert!(svg.contains(&format!("style=\"fill:{INK}\"")));
         png(&svg).unwrap();
+    }
+
+    #[test]
+    fn bars_with_plays_cover_whole_months_or_years() {
+        let d = |y, m, day| NaiveDate::from_ymd_opt(y, m, day).unwrap();
+        let stats = |by_month: Vec<((i32, u32), u64)>| Stats {
+            from: d(2023, 1, 1),
+            to: d(2025, 12, 31),
+            total_ms: 60_000,
+            estimated_ms: 0,
+            plays: 1,
+            by_month,
+            top_artists: vec![],
+            top_tracks: vec![],
+            distinct_artists: 0,
+            distinct_tracks: 0,
+            top_day: None,
+            top_hour: None,
+            by_source: vec![],
+        };
+        let periods = |bars: &[Bar]| bars.iter().map(|b| (b.from, b.to)).collect::<Vec<_>>();
+
+        let months = stats(vec![((2024, 1), 0), ((2024, 2), 5), ((2024, 3), 9)]);
+        let (_, bars) = build_svg(&months, RankBy::Plays, "#5AA9FF", 5).unwrap();
+        assert_eq!(
+            periods(&bars),
+            [
+                (d(2024, 2, 1), d(2024, 2, 29)),
+                (d(2024, 3, 1), d(2024, 3, 31)),
+            ]
+        );
+        for pair in bars.windows(2) {
+            assert!(pair[0].x + pair[0].w <= pair[1].x + 0.01, "{pair:?}");
+        }
+        assert!(
+            bars.iter()
+                .all(|b| b.x >= 0.0 && b.x + b.w <= W && b.y > 0.0)
+        );
+
+        let long = (1..=25)
+            .map(|i| ((2023 + (i - 1) / 12, (i - 1) as u32 % 12 + 1), 1))
+            .collect();
+        let (_, bars) = build_svg(&stats(long), RankBy::Plays, "#5AA9FF", 10).unwrap();
+        assert_eq!(
+            periods(&bars),
+            [
+                (d(2023, 1, 1), d(2023, 12, 31)),
+                (d(2024, 1, 1), d(2024, 12, 31)),
+                (d(2025, 1, 1), d(2025, 12, 31)),
+            ]
+        );
     }
 
     #[test]

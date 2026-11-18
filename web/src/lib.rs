@@ -197,7 +197,7 @@ impl Session {
         let Some(stats) = stats::compute(&plays, &filters, top, rank_by) else {
             bail!("No plays in that date range.");
         };
-        let svg = render::build_svg(&stats, rank_by, accent, top)?;
+        let (svg, _) = render::build_svg(&stats, rank_by, accent, top)?;
         if stats.estimated_ms > 0 {
             notes.push(format!(
                 "Estimated: {} of the {} minutes, from YouTube Music plays the song database doesn't know",
