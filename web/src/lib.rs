@@ -37,6 +37,10 @@ pub struct Recap {
     pub text: String,
     /// Warnings and notes on the sources, as `mw` prints them.
     pub notes: Vec<String>,
+    /// The chart's bars, as JSON: `[{x, y, w, h, from, to, label}]`, with
+    /// `x`, `y`, `w`, `h` in px of the image, `from` and `to` as `YYYY-MM-DD`
+    /// and `label` naming the period: "February 2025" or "2025".
+    pub bars: String,
 }
 
 #[wasm_bindgen]
@@ -197,7 +201,7 @@ impl Session {
         let Some(stats) = stats::compute(&plays, &filters, top, rank_by) else {
             bail!("No plays in that date range.");
         };
-        let svg = render::build_svg(&stats, rank_by, accent, top)?;
+        let (svg, bars) = render::build_svg(&stats, rank_by, accent, top)?;
         if stats.estimated_ms > 0 {
             notes.push(format!(
                 "Estimated: {} of the {} minutes, from YouTube Music plays the song database doesn't know",
@@ -209,6 +213,19 @@ impl Session {
             png: render::png(&svg)?,
             text: text::stats(&stats),
             notes,
+            bars: serde_json::Value::from_iter(bars.iter().map(|b| {
+                serde_json::json!({
+                    "x": b.x, "y": b.y, "w": b.w, "h": b.h,
+                    "from": b.from.to_string(),
+                    "to": b.to.to_string(),
+                    "label": if b.from.month() == b.to.month() {
+                        b.from.format("%B %Y").to_string()
+                    } else {
+                        b.from.year().to_string()
+                    },
+                })
+            }))
+            .to_string(),
         })
     }
 }
@@ -308,6 +325,10 @@ mod tests {
         let r = s.recap("all", "", "", "plays", 5, "orange", "UTC").unwrap();
         assert_eq!(&r.png[1..4], b"PNG");
         assert!(r.text.contains("Minutes listened"));
+        let bars: serde_json::Value = serde_json::from_str(&r.bars).unwrap();
+        assert_eq!(bars[0]["from"], "2025-02-01");
+        assert_eq!(bars[0]["to"], "2025-02-28");
+        assert_eq!(bars[0]["label"], "February 2025");
         assert!(r.notes[0].contains("could not be downloaded"));
         assert!(
             r.notes[1].starts_with("Estimated: 4 of the 4 minutes"),

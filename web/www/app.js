@@ -116,10 +116,19 @@ function show(row, lines, error) {
 }
 
 // Options.
-form.addEventListener("change", (e) => {
+/** Enables the fields of the period chosen. */
+function periodFields() {
   const period = form.period.value;
   form.year.disabled = period !== "year";
   form.from.disabled = form.to.disabled = period !== "range";
+}
+form.addEventListener("change", (e) => {
+  periodFields();
+  // A period picked by hand is a new start: nothing to go back to.
+  if (["period", "year", "from", "to"].includes(e.target.name)) {
+    back.length = 0;
+    showBack();
+  }
   // A new time zone can change the years; the image follows the worker's answer.
   if (e.target === form.tz) worker.postMessage({ type: "years", tz: form.tz.value });
   else create();
@@ -147,6 +156,7 @@ function create() {
   };
   creating = true;
   $("image").classList.add("busy");
+  $("bars").inert = true;
   worker.postMessage({ type: "create", options });
 }
 
@@ -154,6 +164,7 @@ function create() {
 function created() {
   creating = false;
   $("image").classList.remove("busy");
+  $("bars").inert = false;
   // The caption is the progress over the image, or the sample's until the first image.
   $("caption").hidden = !$("image").classList.contains("placeholder");
   $("caption").textContent = "Your image will appear here";
@@ -184,6 +195,7 @@ worker.onmessage = ({ data: msg }) => {
     result(msg);
     created();
   } else if (msg.type === "error") {
+    showBars([]);
     $("status").textContent = "";
     $("error").hidden = false;
     $("error").textContent = msg.message;
@@ -210,8 +222,92 @@ function setReady(value, years) {
   $("needs-file").hidden = ready;
 }
 
+/** Size of the image, in px. */
+const W = 1080;
+const H = 1920;
+
+/** Puts a button over each of the chart's bars, which shows its year or
+ * month; none when there's a single bar. */
+function showBars(bars) {
+  const clickable = bars.length > 1;
+  $("bar-hint").hidden = !clickable;
+  const pct = (v, of) => `${(v / of) * 100}%`;
+  $("bars").replaceChildren(
+    ...(clickable ? bars : []).map((bar) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      Object.assign(button.style, {
+        left: pct(bar.x, W),
+        top: pct(bar.y, H),
+        width: pct(bar.w, W),
+        height: pct(bar.h, H),
+      });
+      button.title = `Show ${bar.label}`;
+      button.setAttribute("aria-label", button.title);
+      button.addEventListener("click", () => showPeriod(bar));
+      return button;
+    }),
+  );
+}
+
+/** The periods shown before each bar clicked, latest last. */
+const back = [];
+
+/** The period chosen in the form. */
+function period() {
+  return { period: form.period.value, year: form.year.value, from: form.from.value, to: form.to.value };
+}
+
+/** Names a period: "whole history", "2024", "March 2024" or its two dates. */
+function periodName(p) {
+  if (p.period === "all") return "whole history";
+  if (p.period === "year") return p.year;
+  const start = new Date(`${p.from}T00:00`);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  const monthEnd = `${p.from.slice(0, 8)}${String(end.getDate()).padStart(2, "0")}`;
+  return p.from.endsWith("-01") && p.to === monthEnd
+    ? start.toLocaleDateString("en", { month: "long", year: "numeric" })
+    : `${p.from} – ${p.to}`;
+}
+
+/** Shows the back button, naming the period it goes back to. */
+function showBack() {
+  const last = back.at(-1);
+  $("back").hidden = !last;
+  if (last) $("back").textContent = `← Back to ${periodName(last)}`;
+}
+
+$("back").addEventListener("click", () => {
+  const p = back.pop();
+  form.period.value = p.period;
+  form.year.value = p.year;
+  form.from.value = p.from;
+  form.to.value = p.to;
+  periodFields();
+  showBack();
+  create();
+});
+
+/** Sets the period to a bar's year or month and makes its image. */
+function showPeriod({ from, to }) {
+  back.push(period());
+  showBack();
+  const year = from.slice(0, 4);
+  const wholeYear = from.endsWith("-01-01") && to.endsWith("-12-31");
+  if (wholeYear && [...form.year.options].some((o) => o.value === year)) {
+    form.period.value = "year";
+    form.year.value = year;
+  } else {
+    form.period.value = "range";
+    form.from.value = from;
+    form.to.value = to;
+  }
+  periodFields();
+  create();
+}
+
 /** Shows the image, with its download and share buttons and notes. */
-function result({ png, notes }) {
+function result({ png, notes, bars }) {
   const blob = new Blob([png], { type: "image/png" });
   if (imageUrl) URL.revokeObjectURL(imageUrl);
   imageUrl = URL.createObjectURL(blob);
@@ -229,6 +325,7 @@ function result({ png, notes }) {
   share.hidden = !navigator.canShare?.({ files: [file] });
   share.onclick = () => navigator.share({ files: [file] }).catch(() => {});
 
+  showBars(bars);
   $("error").hidden = true;
   $("output").hidden = false;
 }

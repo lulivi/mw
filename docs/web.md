@@ -18,6 +18,12 @@
    is read, and made again with each change of the files, the options or the
    color.
 
+Clicking a bar of the image's chart makes the image of that year or month,
+the whole calendar year or month. "Back to …", next to the download button,
+goes back to the period before, one click at a time; choosing a period in the
+options starts over. The downloaded image is the same as `mw`'s for that
+period: the bars are clickable only on the page.
+
 On a computer the image stays on the right while you scroll, with a sample in
 its place until the first one is made. On a phone it comes after the options.
 The page follows the device's light or dark theme; the theme button at the top
