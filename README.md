@@ -31,7 +31,7 @@ Made from a fictional listening history (2021–2025; YouTube Music from 2024).
   <a href="docs/samples/top10.png"><img src="docs/samples/top10.png" width="200" alt="Sample 5: 2025, top 10"></a>
 </p>
 
-1. One year, Spotify only: `--year 2025 --source spotify`
+1. One year, Spotify only: `--spotify <folder> --year 2025` (no `--ytm`)
 2. Custom range, both sources (estimated minutes): `--from 2024-06-01 --to 2025-05-31 --color purple`
 3. Whole history; past 24 months the chart goes by year: `--color blue`
 4. Top lists by minutes: `--year 2025 --rank-by minutes --color green`
@@ -92,7 +92,7 @@ The basic history ("Account data", `StreamingHistory_music_*.json`) also works, 
 ./mw --spotify ./my_spotify_data.zip --ytm ./takeout-20250101T000000Z-001.zip --year 2025
 
 # A custom range, Spotify only, terminal only
-./mw --spotify ./my_data/spotify --from 2024-06-01 --to 2025-05-31 --source spotify --no-image
+./mw --spotify ./my_data/spotify --from 2024-06-01 --to 2025-05-31 --no-image
 
 # Your whole history (no dates)
 ./mw --spotify ./my_data/spotify --ytm ./my_data/watch-history.json

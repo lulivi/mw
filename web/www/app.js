@@ -146,7 +146,6 @@ function create() {
   const period = form.period.value;
   const year = form.year.value;
   const options = {
-    source: form.source.value,
     from: period === "year" ? `${year}-01-01` : period === "range" ? form.from.value : "",
     to: period === "year" ? `${year}-12-31` : period === "range" ? form.to.value : "",
     rankBy: form.rankBy.value,

@@ -76,7 +76,7 @@ async function create(o) {
     await db;
   }
   progress("Making the image…");
-  const r = session.create(o.source, o.from, o.to, o.rankBy, o.top, o.color, o.tz);
+  const r = session.create(o.from, o.to, o.rankBy, o.top, o.color, o.tz);
   const png = r.png;
   const bars = JSON.parse(r.bars);
   postMessage({ type: "result", png, text: r.text, notes: r.notes, bars }, [png.buffer]);

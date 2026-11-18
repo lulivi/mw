@@ -13,7 +13,7 @@ use chrono::NaiveDate;
 use chrono_tz::Tz;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use mw::model::{Play, Source};
+use mw::model::Play;
 use mw::render::{fmt_count, fmt_int};
 use mw::stats::{self, Filters, RankBy};
 use mw::{lengths, musicbrainz, render, songdb, sources, text};
@@ -32,10 +32,6 @@ struct Cli {
     /// Folder, ZIP or file with the YouTube history from Google Takeout (watch-history.json or My Activity.json)
     #[arg(long, value_name = "PATH")]
     ytm: Option<PathBuf>,
-
-    /// Sources included in the stats
-    #[arg(long, value_enum, default_value_t = SourceArg::All)]
-    source: SourceArg,
 
     /// Whole calendar year (shortcut for --from YYYY-01-01 --to YYYY-12-31)
     #[arg(long, value_name = "YYYY", conflicts_with_all = ["from", "to"])]
@@ -162,14 +158,6 @@ enum DbCommand {
     },
 }
 
-/// Values of `--source`: which services count towards the stats.
-#[derive(Clone, Copy, ValueEnum)]
-enum SourceArg {
-    All,
-    Spotify,
-    Ytm,
-}
-
 /// Values of `--color`: the accent used for the minutes and each song's figure.
 #[derive(Clone, Copy, ValueEnum)]
 enum ColorArg {
@@ -222,17 +210,6 @@ fn main() -> Result<()> {
     if cli.spotify.is_none() && cli.ytm.is_none() {
         bail!("Provide at least one source: --spotify <folder> and/or --ytm <watch-history.json>");
     }
-    let source = match cli.source {
-        SourceArg::All => None,
-        SourceArg::Spotify => Some(Source::Spotify),
-        SourceArg::Ytm => Some(Source::YouTubeMusic),
-    };
-    if source == Some(Source::Spotify) && cli.spotify.is_none() {
-        bail!("--source spotify requires --spotify <folder>");
-    }
-    if source == Some(Source::YouTubeMusic) && cli.ytm.is_none() {
-        bail!("--source ytm requires --ytm <watch-history.json>");
-    }
 
     let (from, to) = match cli.year {
         Some(y) => (
@@ -262,21 +239,16 @@ fn main() -> Result<()> {
 
     // Load sources
     let mut plays: Vec<Play> = Vec::new();
-    if wants(source, Source::Spotify)
-        && let Some(dir) = &cli.spotify
-    {
+    if let Some(dir) = &cli.spotify {
         plays.extend(load_spotify(dir)?);
     }
-    if wants(source, Source::YouTubeMusic)
-        && let Some(file) = &cli.ytm
-    {
+    if let Some(file) = &cli.ytm {
         plays.extend(load_ytm(file, cli.ytm_avg_minutes, cli.db.origin())?);
     }
 
     let filters = Filters {
         from,
         to,
-        source,
         tz: cli.tz,
     };
     let rank_by = match cli.rank_by {
@@ -520,29 +492,10 @@ fn print_songs(heading: &str, n: usize, lines: impl IntoIterator<Item = String>,
     }
 }
 
-/// Is this source included? `None` means all sources.
-fn wants(filter: Option<Source>, s: Source) -> bool {
-    filter.is_none_or(|f| f == s)
-}
-
 /// Prints to stderr how many plays a source loaded and its warnings.
 fn report(name: &str, n: usize, warnings: &[String]) {
     eprintln!("{name}: {} loaded", fmt_count(n as u64, "play"));
     for w in warnings {
         eprintln!("  warning: {w}");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn wants_matches_filter() {
-        assert!(wants(None, Source::Spotify));
-        assert!(wants(None, Source::YouTubeMusic));
-        assert!(wants(Some(Source::Spotify), Source::Spotify));
-        assert!(!wants(Some(Source::Spotify), Source::YouTubeMusic));
-        assert!(!wants(Some(Source::YouTubeMusic), Source::Spotify));
     }
 }
