@@ -387,7 +387,6 @@ select, input[type="date"], button, .primary {
 }
 .primary:hover { filter: brightness(1.08); }
 .primary:active { scale: 0.98; }
-#create { width: 100%; }
 
 .remove { min-height: 2.25rem; padding: 0.25rem 0.75rem; font-size: 0.875rem; cursor: pointer; }
 
@@ -426,6 +425,8 @@ footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line
   #image { width: auto; height: min(42.67rem, 100dvh - 9rem); }
 }
 #image.placeholder { filter: grayscale(1); opacity: 0.5; }
+/* The last image, while the next one is made. */
+#image.busy:not(.placeholder) { opacity: 0.5; }
 #caption {
   position: absolute;
   top: 50%;

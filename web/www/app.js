@@ -11,12 +11,11 @@ let nextId = 0;
 /** Whether the files added can make an image (they hold a history and agree). */
 let ready = false;
 let imageUrl;
-/** Whether an image is being made: its progress shows in the button, so the
- * options never move. */
+/** Whether an image is being made, and whether the options changed meanwhile:
+ * then one more is made, with the latest options. */
 let creating = false;
+let pending = false;
 const smooth = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
-/** Whether the page is one column (a phone), with the image at the end. */
-const oneColumn = matchMedia("(max-width: 899px)");
 
 // Theme: the device's, or light or dark, remembered on this device only.
 const THEMES = { "": "Device", light: "Light", dark: "Dark" };
@@ -42,6 +41,7 @@ $("color").addEventListener("change", () => {
   try {
     localStorage.setItem("color", form.color.value);
   } catch {}
+  create();
 });
 
 // Time zones, with the device's selected.
@@ -120,11 +120,20 @@ form.addEventListener("change", (e) => {
   const period = form.period.value;
   form.year.disabled = period !== "year";
   form.from.disabled = form.to.disabled = period !== "range";
+  // A new time zone can change the years; the image follows the worker's answer.
   if (e.target === form.tz) worker.postMessage({ type: "years", tz: form.tz.value });
+  else create();
 });
+form.addEventListener("submit", (e) => e.preventDefault());
 
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
+/** Makes the image with the options chosen, once the files are ready; while
+ * one is being made, makes one more after it. */
+function create() {
+  if (!ready) return;
+  if (creating) {
+    pending = true;
+    return;
+  }
   const period = form.period.value;
   const year = form.year.value;
   const options = {
@@ -137,22 +146,31 @@ form.addEventListener("submit", (e) => {
     tz: form.tz.value,
   };
   creating = true;
-  $("create").disabled = true;
+  $("image").classList.add("busy");
   worker.postMessage({ type: "create", options });
-});
+}
 
-/** Gives the button back once the image is made, or failed. */
+/** Once the image is made, or failed: makes the next one if the options changed. */
 function created() {
   creating = false;
-  $("create").disabled = false;
-  $("create").textContent = "Create image";
+  $("image").classList.remove("busy");
+  // The caption is the progress over the image, or the sample's until the first image.
+  $("caption").hidden = !$("image").classList.contains("placeholder");
+  $("caption").textContent = "Your image will appear here";
+  if (pending) {
+    pending = false;
+    create();
+  }
 }
 
 // Messages from the worker.
 worker.onmessage = ({ data: msg }) => {
   if (msg.type === "progress") {
-    if (creating) $("create").textContent = msg.text || "Create image";
-    else $("status").textContent = msg.text;
+    if (!creating) $("status").textContent = msg.text;
+    else if (msg.text) {
+      $("caption").textContent = msg.text;
+      $("caption").hidden = false;
+    }
   } else if (msg.type === "file") {
     const row = $(`file-${msg.id}`);
     if (msg.error) show(row, [], msg.error);
@@ -161,14 +179,15 @@ worker.onmessage = ({ data: msg }) => {
     setReady(!msg.error && msg.years.length > 0, msg.years);
     $("status").textContent = msg.error ?? "";
     $("status").classList.toggle("error", Boolean(msg.error));
+    create();
   } else if (msg.type === "result") {
-    created();
     result(msg);
-  } else if (msg.type === "error") {
     created();
+  } else if (msg.type === "error") {
     $("status").textContent = "";
     $("error").hidden = false;
     $("error").textContent = msg.message;
+    created();
   }
 };
 worker.onerror = (e) => {
@@ -200,7 +219,6 @@ function result({ png, notes }) {
   image.src = imageUrl;
   image.alt = "Your listening recap";
   image.classList.remove("placeholder");
-  $("caption").hidden = true;
   $("download").href = imageUrl;
   $("notes").replaceChildren(
     ...notes.map((n) => Object.assign(document.createElement("li"), { textContent: n })),
@@ -213,6 +231,4 @@ function result({ png, notes }) {
 
   $("error").hidden = true;
   $("output").hidden = false;
-  // On a computer the image is already in view, on the right.
-  if (oneColumn.matches) $("result").scrollIntoView({ behavior: smooth() });
 }
