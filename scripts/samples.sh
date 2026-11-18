@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Regenerates the sample images in docs/samples/ from a fictional listening history.
+# Regenerates the sample images in docs/samples/ from a fictional listening history,
+# and the README's logo, docs/logo.svg.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -22,3 +23,9 @@ mw --color blue --out docs/samples/history.png
 mw --year 2025 --rank-by minutes --color green --out docs/samples/minutes.png
 mw --year 2025 --top 10 --color pink --out docs/samples/top10.png
 ls -l docs/samples
+
+# The README's logo: assets/logo.svg as on the image, on its background.
+sed '1c <svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -50 1063 471">\
+<style>svg { --logo-ink: #AEB5BD; --accent: #FF6B4A; }</style>\
+<rect x="-60" y="-50" width="1063" height="471" rx="40" fill="#101418"/>' \
+  assets/logo.svg >docs/logo.svg

@@ -14,7 +14,9 @@
    sources, the ranking and the time zone (the device's by default).
    This step opens once a file is read. The options are the same as `mw`'s and
    default to the same values, except the time zone.
-3. Press **Create image**, then download it or, on a phone, share it.
+3. Download the image or, on a phone, share it. It's made as soon as a file
+   is read, and made again with each change of the files, the options or the
+   color.
 
 On a computer the image stays on the right while you scroll, with a sample in
 its place until the first one is made. On a phone it comes after the options.

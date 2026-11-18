@@ -560,7 +560,7 @@ fn chart_labels(m: &Measure, mut labels: Vec<String>, slot: f32) -> (Vec<String>
         // Only years are this wide: month labels are single initials.
         labels = labels
             .iter()
-            .map(|l| format!("’{}", &l[l.len() - 2..]))
+            .map(|l| format!("’{}", &l[l.len().saturating_sub(2)..]))
             .collect();
     }
     let w = widest(&labels);
@@ -757,6 +757,14 @@ mod tests {
         for l in &ls {
             assert!(m.width(l, size, true) <= slot(40) + 0.01, "{l} at {size}");
         }
+    }
+
+    #[test]
+    fn shortens_one_digit_years() {
+        let m = Measure::new().unwrap();
+        let years: Vec<String> = (1..=2025).map(|y: i32| y.to_string()).collect();
+        let (ls, _) = chart_labels(&m, years, 1.0);
+        assert_eq!((ls[0].as_str(), ls[2024].as_str()), ("’1", "’25"));
     }
 
     #[test]
