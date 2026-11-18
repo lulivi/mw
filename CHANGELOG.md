@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/lulivi/mw/compare/v0.4.0...v0.4.1) - 2026-11-18
+
+### Added
+
+- *(web)* make the image as the data or the options change, and show the version ([#81](https://github.com/lulivi/mw/pull/81))
+
+### Fixed
+
+- *(web)* read mw's version wherever the repository is checked out ([#83](https://github.com/lulivi/mw/pull/83))
+
 ## [0.4.0](https://github.com/lulivi/mw/compare/v0.3.1...v0.4.0) - 2026-11-16
 
 ### Added
