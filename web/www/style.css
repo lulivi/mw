@@ -312,7 +312,7 @@ select, input[type="date"], button, .primary {
   }
   .field { grid-template-columns: 6.5rem 1fr; gap: 0; align-items: center; }
   /* Aligned with the buttons, so it reads as part of the choice above. */
-  .period > .when-all, .period > .when-year, .period > .when-range { margin-left: 6.5rem; }
+  .period > .when-all, .period > .when-year, .period > .when-range, .period > .bar-hint { margin-left: 6.5rem; }
   .colors { min-height: 3.125rem; align-items: center; }
 }
 
@@ -427,6 +427,25 @@ footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line
 #image.placeholder { filter: grayscale(1); opacity: 0.5; }
 /* The last image, while the next one is made. */
 #image.busy:not(.placeholder) { opacity: 0.5; }
+/* Over the chart's bars: a click shows that year or month. */
+.bars { position: absolute; inset: 0; }
+.bars button {
+  position: absolute;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+/* A soft tint, not a line, which would cross the top bar's minutes. */
+.bars button:focus-visible { background: color-mix(in srgb, var(--accent) 14%, transparent); outline-color: var(--accent); outline-offset: -2px; }
+/* Touch screens keep the last tap as hover, which would mark a bar of the next image. */
+@media (hover: hover) {
+  .bars button:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+}
+.bars[inert] { display: none; }
+.bar-hint { margin: 0.5rem 0 0; color: var(--muted); font-size: 0.875rem; }
 #caption {
   position: absolute;
   top: 50%;
@@ -445,7 +464,7 @@ footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line
 @keyframes appear { from { opacity: 0.5; scale: 0.98; } }
 
 #output { width: 100%; max-width: 24rem; }
-.actions { display: flex; gap: 0.5rem; justify-content: center; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
 .actions > * { min-width: 9rem; }
 .secondary {
   min-height: 3rem;

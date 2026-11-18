@@ -114,6 +114,7 @@
               <span aria-hidden="true">–</span>
               <label><span class="visually-hidden">To</span><input id="to" name="to" type="date" disabled></label>
             </div>
+            <p id="bar-hint" class="bar-hint" hidden>Or click a bar on the image to see that year or month.</p>
           </fieldset>
           <fieldset>
             <legend>Sources</legend>
@@ -154,6 +155,7 @@
     <p id="error" class="error" role="alert" hidden></p>
     <figure class="frame">
       <img id="image" class="placeholder" src="sample.png" alt="Sample image" width="1080" height="1920">
+      <div id="bars" class="bars"></div>
       <figcaption id="caption">Your image will appear here</figcaption>
     </figure>
     <div id="output" hidden>

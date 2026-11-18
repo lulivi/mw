@@ -116,10 +116,14 @@ function show(row, lines, error) {
 }
 
 // Options.
-form.addEventListener("change", (e) => {
+/** Enables the fields of the period chosen. */
+function periodFields() {
   const period = form.period.value;
   form.year.disabled = period !== "year";
   form.from.disabled = form.to.disabled = period !== "range";
+}
+form.addEventListener("change", (e) => {
+  periodFields();
   // A new time zone can change the years; the image follows the worker's answer.
   if (e.target === form.tz) worker.postMessage({ type: "years", tz: form.tz.value });
   else create();
@@ -147,6 +151,7 @@ function create() {
   };
   creating = true;
   $("image").classList.add("busy");
+  $("bars").inert = true;
   worker.postMessage({ type: "create", options });
 }
 
@@ -154,6 +159,7 @@ function create() {
 function created() {
   creating = false;
   $("image").classList.remove("busy");
+  $("bars").inert = false;
   // The caption is the progress over the image, or the sample's until the first image.
   $("caption").hidden = !$("image").classList.contains("placeholder");
   $("caption").textContent = "Your image will appear here";
@@ -184,6 +190,7 @@ worker.onmessage = ({ data: msg }) => {
     result(msg);
     created();
   } else if (msg.type === "error") {
+    showBars([]);
     $("status").textContent = "";
     $("error").hidden = false;
     $("error").textContent = msg.message;
@@ -210,8 +217,52 @@ function setReady(value, years) {
   $("needs-file").hidden = ready;
 }
 
+/** Size of the image, in px. */
+const W = 1080;
+const H = 1920;
+
+/** Puts a button over each of the chart's bars, which shows its year or
+ * month; none when there's a single bar. */
+function showBars(bars) {
+  const clickable = bars.length > 1;
+  $("bar-hint").hidden = !clickable;
+  const pct = (v, of) => `${(v / of) * 100}%`;
+  $("bars").replaceChildren(
+    ...(clickable ? bars : []).map((bar) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      Object.assign(button.style, {
+        left: pct(bar.x, W),
+        top: pct(bar.y, H),
+        width: pct(bar.w, W),
+        height: pct(bar.h, H),
+      });
+      button.title = `Show ${bar.label}`;
+      button.setAttribute("aria-label", button.title);
+      button.addEventListener("click", () => showPeriod(bar));
+      return button;
+    }),
+  );
+}
+
+/** Sets the period to a bar's year or month and makes its image. */
+function showPeriod({ from, to }) {
+  const year = from.slice(0, 4);
+  const wholeYear = from.endsWith("-01-01") && to.endsWith("-12-31");
+  if (wholeYear && [...form.year.options].some((o) => o.value === year)) {
+    form.period.value = "year";
+    form.year.value = year;
+  } else {
+    form.period.value = "range";
+    form.from.value = from;
+    form.to.value = to;
+  }
+  periodFields();
+  create();
+}
+
 /** Shows the image, with its download and share buttons and notes. */
-function result({ png, notes }) {
+function result({ png, notes, bars }) {
   const blob = new Blob([png], { type: "image/png" });
   if (imageUrl) URL.revokeObjectURL(imageUrl);
   imageUrl = URL.createObjectURL(blob);
@@ -229,6 +280,7 @@ function result({ png, notes }) {
   share.hidden = !navigator.canShare?.({ files: [file] });
   share.onclick = () => navigator.share({ files: [file] }).catch(() => {});
 
+  showBars(bars);
   $("error").hidden = true;
   $("output").hidden = false;
 }

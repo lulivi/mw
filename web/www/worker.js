@@ -78,7 +78,8 @@ async function create(o) {
   progress("Making the image…");
   const r = session.create(o.source, o.from, o.to, o.rankBy, o.top, o.color, o.tz);
   const png = r.png;
-  postMessage({ type: "result", png, text: r.text, notes: r.notes }, [png.buffer]);
+  const bars = JSON.parse(r.bars);
+  postMessage({ type: "result", png, text: r.text, notes: r.notes, bars }, [png.buffer]);
   progress("");
 }
 
