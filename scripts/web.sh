@@ -15,7 +15,7 @@ rm -rf "$out"
 mkdir -p "$out"
 cp -r web/www/. "$out"
 # mw's version, in the footer.
-version=$(cargo pkgid -p mw | sed 's/.*@//')
+version=$(cargo pkgid -p mw | sed 's/.*[#@]//')
 sed -i "s/@VERSION@/$version/g" "$out/index.html"
 # The logo, shared with the image.
 cp assets/logo.svg "$out/logo.svg"
