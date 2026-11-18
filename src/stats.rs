@@ -24,8 +24,6 @@ pub struct Filters {
     pub from: Option<NaiveDate>,
     /// Last day included, in the time zone `tz`. `None` = no upper limit.
     pub to: Option<NaiveDate>,
-    /// `None` = all sources.
-    pub source: Option<Source>,
     /// Time zone that decides the day, month and hour of each play.
     pub tz: Tz,
 }
@@ -183,9 +181,6 @@ pub fn compute(plays: &[Play], f: &Filters, top: usize, by: RankBy) -> Option<St
     let mut last: Option<NaiveDate> = None;
 
     for p in plays {
-        if f.source.is_some_and(|s| s != p.source) {
-            continue;
-        }
         let local = p.ts.with_timezone(&f.tz);
         let day = local.date_naive();
         if f.from.is_some_and(|d| day < d) || f.to.is_some_and(|d| day > d) {
@@ -298,7 +293,6 @@ mod tests {
         Filters {
             from: None,
             to: None,
-            source: None,
             tz: chrono_tz::Europe::Madrid,
         }
     }
@@ -351,21 +345,6 @@ mod tests {
         assert_eq!(s.plays, 1);
         assert_eq!(s.by_month.len(), 12);
         assert_eq!(s.by_month[0], ((2025, 1), 200_000));
-    }
-
-    #[test]
-    fn filters_by_source() {
-        let plays = vec![
-            play("2025-01-10 10:00", "A", "T", 200_000, Source::Spotify),
-            play("2025-01-10 11:00", "B", "U", 210_000, Source::YouTubeMusic),
-        ];
-        let f = Filters {
-            source: Some(Source::YouTubeMusic),
-            ..filters()
-        };
-        let s = compute(&plays, &f, 5, RankBy::Minutes).unwrap();
-        assert_eq!(s.plays, 1);
-        assert_eq!(s.top_artists[0].name, "B");
     }
 
     #[test]

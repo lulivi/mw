@@ -61,15 +61,7 @@ fn terminal_only_and_spotify_only() {
     let output = bin()
         .arg("--spotify")
         .arg(fixtures().join("spotify"))
-        .args([
-            "--from",
-            "2024-06-01",
-            "--to",
-            "2024-06-30",
-            "--source",
-            "spotify",
-            "--no-image",
-        ])
+        .args(["--from", "2024-06-01", "--to", "2024-06-30", "--no-image"])
         .output()
         .unwrap();
     assert!(output.status.success());

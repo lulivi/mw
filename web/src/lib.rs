@@ -173,12 +173,7 @@ impl Session {
             plays.extend(loaded.plays);
         }
 
-        let filters = Filters {
-            from,
-            to,
-            source: None,
-            tz,
-        };
+        let filters = Filters { from, to, tz };
         let Some(stats) = stats::compute(&plays, &filters, top, rank_by) else {
             bail!("No plays in that date range.");
         };

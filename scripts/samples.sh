@@ -11,13 +11,13 @@ cargo build --release
 cargo run --release --example sample_data -- "$data"
 
 # The video IDs are fake: never download the song database.
-mw() {
-  ./target/release/mw --offline --spotify "$data/spotify" \
-    --ytm "$data/watch-history.json" --overwrite "$@" >/dev/null
+spotify() {
+  ./target/release/mw --offline --spotify "$data/spotify" --overwrite "$@" >/dev/null
 }
+mw() { spotify --ytm "$data/watch-history.json" "$@"; }
 
 mkdir -p docs/samples
-mw --source spotify --year 2025 --out docs/samples/year.png
+spotify --year 2025 --out docs/samples/year.png
 mw --from 2024-06-01 --to 2025-05-31 --color purple --out docs/samples/range.png
 mw --color blue --out docs/samples/history.png
 mw --year 2025 --rank-by minutes --color green --out docs/samples/minutes.png
