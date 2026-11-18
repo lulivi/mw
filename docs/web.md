@@ -11,9 +11,10 @@
    what it holds (or that it holds nothing to use). Files over 500 MB are
    refused; a phone would run out of memory.
 2. Choose the options: the period (whole history, a year or a date range), the
-   sources, the ranking and the time zone (the device's by default).
-   This step opens once a file is read. The options are the same as `mw`'s and
-   default to the same values, except the time zone.
+   ranking and the time zone (the device's by default). The image counts every
+   file added; to leave a service out, remove its files. This step opens once a
+   file is read. The options are the same as `mw`'s and default to the same
+   values, except the time zone.
 3. Download the image or, on a phone, share it. It's made as soon as a file
    is read, and made again with each change of the files, the options or the
    color.

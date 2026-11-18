@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::{Datelike, NaiveDate};
 use chrono_tz::Tz;
-use mw::model::{Play, Source};
+use mw::model::Play;
 use mw::render::{self, fmt_count, fmt_int};
 use mw::sources::{self, Content, File};
 use mw::stats::{self, Filters, RankBy};
@@ -92,14 +92,12 @@ impl Session {
         Ok(years.into_iter().collect())
     }
 
-    /// Makes the image from the files added, with `mw`'s options: `source`
-    /// (`all`, `spotify` or `ytm`), `from` and `to` (`YYYY-MM-DD`, or empty for
-    /// no limit), `rank_by` (`plays` or `minutes`), `top` (5 or 10), `color`
+    /// Makes the image from every file added, with `mw`'s options: `from` and
+    /// `to` (`YYYY-MM-DD`, or empty for no limit), `rank_by` (`plays` or `minutes`), `top` (5 or 10), `color`
     /// and `tz`.
     #[allow(clippy::too_many_arguments)]
     pub fn create(
         &self,
-        source: &str,
         from: &str,
         to: &str,
         rank_by: &str,
@@ -107,8 +105,7 @@ impl Session {
         color: &str,
         tz: &str,
     ) -> Result<Recap, JsError> {
-        self.recap(source, from, to, rank_by, top, color, tz)
-            .map_err(js)
+        self.recap(from, to, rank_by, top, color, tz).map_err(js)
     }
 }
 
@@ -122,7 +119,6 @@ impl Session {
     #[allow(clippy::too_many_arguments)]
     fn recap(
         &self,
-        source: &str,
         from: &str,
         to: &str,
         rank_by: &str,
@@ -131,20 +127,8 @@ impl Session {
         tz: &str,
     ) -> Result<Recap> {
         let found = sources::combine(self.contents())?;
-        let source = match source {
-            "all" => None,
-            "spotify" => Some(Source::Spotify),
-            "ytm" => Some(Source::YouTubeMusic),
-            _ => bail!("unknown source {source}"),
-        };
         if found.spotify.is_none() && found.youtube.is_none() {
             bail!("Add your Spotify or YouTube history first.");
-        }
-        if source == Some(Source::Spotify) && found.spotify.is_none() {
-            bail!("Only Spotify needs your Spotify history: add it, or choose all sources.");
-        }
-        if source == Some(Source::YouTubeMusic) && found.youtube.is_none() {
-            bail!("Only YouTube Music needs your YouTube history: add it, or choose all sources.");
         }
         let from = date(from)?;
         let to = date(to)?;
@@ -166,14 +150,11 @@ impl Session {
 
         let mut plays: Vec<Play> = vec![];
         let mut notes = vec![];
-        if let Some(loaded) = found
-            .spotify
-            .filter(|_| source != Some(Source::YouTubeMusic))
-        {
+        if let Some(loaded) = found.spotify {
             notes.extend(loaded.warnings);
             plays.extend(loaded.plays);
         }
-        if let Some(mut loaded) = found.youtube.filter(|_| source != Some(Source::Spotify)) {
+        if let Some(mut loaded) = found.youtube {
             notes.extend(loaded.warnings);
             match &self.db {
                 Some(db) => {
@@ -195,7 +176,7 @@ impl Session {
         let filters = Filters {
             from,
             to,
-            source,
+            source: None,
             tz,
         };
         let Some(stats) = stats::compute(&plays, &filters, top, rank_by) else {
@@ -306,23 +287,10 @@ mod tests {
         assert_eq!(lines, ["Not used: no Spotify or YouTube history in it"]);
         assert!(s.has_youtube());
 
-        let err = s
-            .recap("spotify", "", "", "plays", 5, "orange", "UTC")
-            .err()
-            .unwrap();
-        assert!(err.to_string().starts_with("Only Spotify needs"), "{err}");
-        let err = s.recap(
-            "all",
-            "2025-03-01",
-            "2025-02-01",
-            "plays",
-            5,
-            "orange",
-            "UTC",
-        );
+        let err = s.recap("2025-03-01", "2025-02-01", "plays", 5, "orange", "UTC");
         assert!(err.err().unwrap().to_string().contains("is after"));
 
-        let r = s.recap("all", "", "", "plays", 5, "orange", "UTC").unwrap();
+        let r = s.recap("", "", "plays", 5, "orange", "UTC").unwrap();
         assert_eq!(&r.png[1..4], b"PNG");
         assert!(r.text.contains("Minutes listened"));
         let bars: serde_json::Value = serde_json::from_str(&r.bars).unwrap();
@@ -335,15 +303,12 @@ mod tests {
             "{:?}",
             r.notes
         );
-        assert!(s.recap("all", "", "", "plays", 10, "orange", "UTC").is_ok());
-        let err = s.recap("all", "", "", "plays", 3, "orange", "UTC");
+        assert!(s.recap("", "", "plays", 10, "orange", "UTC").is_ok());
+        let err = s.recap("", "", "plays", 3, "orange", "UTC");
         assert!(err.err().unwrap().to_string().contains("top list size"));
 
         s.remove(0);
-        let err = s
-            .recap("all", "", "", "plays", 5, "orange", "UTC")
-            .err()
-            .unwrap();
+        let err = s.recap("", "", "plays", 5, "orange", "UTC").err().unwrap();
         assert!(err.to_string().contains("first"), "{err}");
     }
 }
