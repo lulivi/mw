@@ -124,6 +124,11 @@ function periodFields() {
 }
 form.addEventListener("change", (e) => {
   periodFields();
+  // A period picked by hand is a new start: nothing to go back to.
+  if (["period", "year", "from", "to"].includes(e.target.name)) {
+    back.length = 0;
+    showBack();
+  }
   // A new time zone can change the years; the image follows the worker's answer.
   if (e.target === form.tz) worker.postMessage({ type: "years", tz: form.tz.value });
   else create();
@@ -245,8 +250,48 @@ function showBars(bars) {
   );
 }
 
+/** The periods shown before each bar clicked, latest last. */
+const back = [];
+
+/** The period chosen in the form. */
+function period() {
+  return { period: form.period.value, year: form.year.value, from: form.from.value, to: form.to.value };
+}
+
+/** Names a period: "whole history", "2024", "March 2024" or its two dates. */
+function periodName(p) {
+  if (p.period === "all") return "whole history";
+  if (p.period === "year") return p.year;
+  const start = new Date(`${p.from}T00:00`);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  const monthEnd = `${p.from.slice(0, 8)}${String(end.getDate()).padStart(2, "0")}`;
+  return p.from.endsWith("-01") && p.to === monthEnd
+    ? start.toLocaleDateString("en", { month: "long", year: "numeric" })
+    : `${p.from} – ${p.to}`;
+}
+
+/** Shows the back button, naming the period it goes back to. */
+function showBack() {
+  const last = back.at(-1);
+  $("back").hidden = !last;
+  if (last) $("back").textContent = `← Back to ${periodName(last)}`;
+}
+
+$("back").addEventListener("click", () => {
+  const p = back.pop();
+  form.period.value = p.period;
+  form.year.value = p.year;
+  form.from.value = p.from;
+  form.to.value = p.to;
+  periodFields();
+  showBack();
+  create();
+});
+
 /** Sets the period to a bar's year or month and makes its image. */
 function showPeriod({ from, to }) {
+  back.push(period());
+  showBack();
   const year = from.slice(0, 4);
   const wholeYear = from.endsWith("-01-01") && to.endsWith("-12-31");
   if (wholeYear && [...form.year.options].some((o) => o.value === year)) {
