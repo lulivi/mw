@@ -52,6 +52,10 @@ _Avoid_: Web app, site, frontend
 The most listened artists or songs, best first, ranked by plays or by minutes.
 _Avoid_: Ranking, chart
 
+**Chart**:
+The bars of minutes per month, or per year when the period is longer than 24 months, on the image.
+_Avoid_: Graph, histogram
+
 **Accent**:
 The color the listener picks, one of a fixed set, for the main figure, the highlights and the red of the logo, on the image and the web page alike.
 _Avoid_: Theme color, highlight color
