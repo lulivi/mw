@@ -1,8 +1,5 @@
 <h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="web/www/logo-dark.webp">
-    <img src="web/www/logo-light.webp" alt="mw — Music Wrapped" width="400">
-  </picture>
+  <img src="docs/logo.svg" alt="mw — Music Wrapped" width="400">
 </h1>
 
 Your own "Wrapped" from your Spotify and YouTube Music data: total minutes, minutes per month, top artists and top songs, for any date range you want. It creates a 1080×1920 vertical image ready to share from your phone.
