@@ -34,6 +34,8 @@ $("theme").addEventListener("click", () => {
     localStorage.setItem("theme", root.dataset.theme);
   } catch {}
   showTheme();
+});
+showTheme();
 
 // Color: of the page and the image, remembered on this device only.
 $("color").addEventListener("change", () => {
@@ -41,8 +43,6 @@ $("color").addEventListener("change", () => {
     localStorage.setItem("color", form.color.value);
   } catch {}
 });
-});
-showTheme();
 
 // Time zones, with the device's selected.
 const here = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
