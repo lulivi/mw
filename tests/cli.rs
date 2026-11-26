@@ -277,3 +277,49 @@ fn db_export_writes_one_file_per_source() {
         assert!(names.iter().any(|n| n.starts_with(prefix)), "{names:?}");
     }
 }
+
+#[test]
+fn draws_names_inter_lacks_with_the_cached_fallback_font() {
+    let dir = tempfile::tempdir().unwrap();
+    let spotify = dir.path().join("Streaming_History_Audio_2025.json");
+    std::fs::write(
+        &spotify,
+        r#"[{"ts":"2025-01-15T18:00:00Z","platform":"android","ms_played":180000,"master_metadata_track_name":"ムーンライト","master_metadata_album_artist_name":"花譜","master_metadata_album_album_name":"A","spotify_track_uri":"spotify:track:1","skipped":false}]"#,
+    )
+    .unwrap();
+    let run = |png: &str| {
+        let out = dir.path().join(png);
+        let output = bin()
+            .arg("--spotify")
+            .arg(&spotify)
+            .arg("--offline")
+            .env("XDG_CACHE_HOME", dir.path())
+            .arg("--out")
+            .arg(&out)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        (std::fs::read(out).unwrap(), stderr)
+    };
+
+    let (boxes, stderr) = run("boxes.png");
+    assert!(
+        stderr.contains("warning: font NotoSansCJKjp-Regular.otf: not in the cache"),
+        "{stderr}"
+    );
+
+    let fonts = dir.path().join("mw/fonts");
+    std::fs::create_dir_all(&fonts).unwrap();
+    let font = "NotoSansCJKjp-Regular.otf";
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/fonts")
+            .join(font),
+        fonts.join(font),
+    )
+    .unwrap();
+    let (drawn, stderr) = run("drawn.png");
+    assert!(!stderr.contains("warning: font"), "{stderr}");
+    assert_ne!(boxes, drawn);
+}

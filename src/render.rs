@@ -20,6 +20,128 @@ const FONT_BOLD: &[u8] = include_bytes!("../assets/Inter-Bold.otf");
 /// Tiny5 Mono Regular (SIL Open Font License 1.1, see assets/OFL-Tiny5Mono.txt),
 /// used only for the main figure. Its pixel rows are crisp at multiples of 8 px.
 const FONT_NUMBER: &[u8] = include_bytes!("../assets/Tiny5Mono-Regular.otf");
+
+/// Where the fallback fonts are downloaded from: `assets/fonts/` on `main`.
+pub const FONTS_URL: &str = repo_url!("assets/fonts/");
+
+/// A fallback font: a Noto font (SIL Open Font License 1.1, see
+/// assets/OFL-Noto.txt) for characters Inter lacks, downloaded only when a name
+/// on the image has one in its `ranges`.
+pub struct Fallback {
+    /// Its file in `assets/fonts/`.
+    pub file: &'static str,
+    ranges: &'static [(char, char)],
+}
+
+/// The fallback fonts, Regular only: names are drawn in Inter Regular.
+pub const FALLBACKS: [Fallback; 12] = [
+    Fallback {
+        // Japanese, Chinese and Korean.
+        file: "NotoSansCJKjp-Regular.otf",
+        ranges: &[
+            ('\u{1100}', '\u{11FF}'),
+            ('\u{2E80}', '\u{2FDF}'),
+            ('\u{3000}', '\u{33FF}'),
+            ('\u{3400}', '\u{4DBF}'),
+            ('\u{4E00}', '\u{9FFF}'),
+            ('\u{A960}', '\u{A97F}'),
+            ('\u{AC00}', '\u{D7FF}'),
+            ('\u{F900}', '\u{FAFF}'),
+            ('\u{FE30}', '\u{FE4F}'),
+            ('\u{FF00}', '\u{FFEF}'),
+            ('\u{20000}', '\u{3134F}'),
+        ],
+    },
+    Fallback {
+        file: "NotoEmoji.ttf",
+        ranges: &[
+            ('\u{2300}', '\u{23FF}'),
+            ('\u{2600}', '\u{27BF}'),
+            ('\u{2B00}', '\u{2BFF}'),
+            ('\u{FE0F}', '\u{FE0F}'),
+            ('\u{1F000}', '\u{1FAFF}'),
+        ],
+    },
+    Fallback {
+        file: "NotoSansArabic-Regular.otf",
+        ranges: &[
+            ('\u{0600}', '\u{06FF}'),
+            ('\u{0750}', '\u{077F}'),
+            ('\u{08A0}', '\u{08FF}'),
+            ('\u{FB50}', '\u{FDFF}'),
+            ('\u{FE70}', '\u{FEFF}'),
+        ],
+    },
+    Fallback {
+        file: "NotoSansHebrew-Regular.otf",
+        ranges: &[('\u{0590}', '\u{05FF}'), ('\u{FB1D}', '\u{FB4F}')],
+    },
+    Fallback {
+        file: "NotoSansThai-Regular.otf",
+        ranges: &[('\u{0E00}', '\u{0E7F}')],
+    },
+    Fallback {
+        file: "NotoSansDevanagari-Regular.otf",
+        ranges: &[('\u{0900}', '\u{097F}'), ('\u{A8E0}', '\u{A8FF}')],
+    },
+    Fallback {
+        file: "NotoSansBengali-Regular.otf",
+        ranges: &[('\u{0980}', '\u{09FF}')],
+    },
+    Fallback {
+        file: "NotoSansTamil-Regular.otf",
+        ranges: &[('\u{0B80}', '\u{0BFF}')],
+    },
+    Fallback {
+        file: "NotoSansArmenian-Regular.otf",
+        ranges: &[('\u{0530}', '\u{058F}'), ('\u{FB13}', '\u{FB17}')],
+    },
+    Fallback {
+        file: "NotoSansGeorgian-Regular.otf",
+        ranges: &[
+            ('\u{10A0}', '\u{10FF}'),
+            ('\u{1C90}', '\u{1CBF}'),
+            ('\u{2D00}', '\u{2D2F}'),
+        ],
+    },
+    Fallback {
+        file: "NotoSansEthiopic-Regular.otf",
+        ranges: &[
+            ('\u{1200}', '\u{139F}'),
+            ('\u{2D80}', '\u{2DDF}'),
+            ('\u{AB00}', '\u{AB2F}'),
+        ],
+    },
+    Fallback {
+        file: "NotoSansKhmer-Regular.otf",
+        ranges: &[('\u{1780}', '\u{17FF}'), ('\u{19E0}', '\u{19FF}')],
+    },
+];
+
+/// The fallback fonts the image of `s` needs: those with a character Inter
+/// lacks in a name or artist of its top lists, in [`FALLBACKS`] order.
+pub fn needed_fonts(s: &Stats) -> Result<Vec<&'static Fallback>> {
+    let inter = ttf_parser::Face::parse(FONT_REGULAR, 0).context("regular font")?;
+    let missing: Vec<char> = s
+        .top_artists
+        .iter()
+        .chain(&s.top_tracks)
+        .flat_map(|r| {
+            r.name
+                .chars()
+                .chain(r.detail.iter().flat_map(|d| d.chars()))
+        })
+        .filter(|&c| inter.glyph_index(c).is_none())
+        .collect();
+    Ok(FALLBACKS
+        .iter()
+        .filter(|f| {
+            missing
+                .iter()
+                .any(|c| f.ranges.iter().any(|(lo, hi)| (lo..=hi).contains(&c)))
+        })
+        .collect())
+}
 /// The mw logo, shared with the web page. Its colors are the CSS variables
 /// `--logo-ink` and `--accent`, which [`build_svg`] replaces.
 const LOGO: &str = include_str!("../assets/logo.svg");
@@ -151,11 +273,56 @@ fn esc(s: &str) -> String {
 
 // ---------- text measuring (to truncate with "…") ----------
 
-/// The embedded fonts, parsed to measure text without rendering it.
-struct Measure {
+/// The fonts, parsed to measure text without rendering it.
+struct Measure<'a> {
     regular: ttf_parser::Face<'static>,
     bold: ttf_parser::Face<'static>,
     number: ttf_parser::Face<'static>,
+    /// The fallback fonts given, for characters Inter lacks.
+    fallbacks: Vec<FallbackFace<'a>>,
+}
+
+/// A fallback font given to [`build_svg`].
+struct FallbackFace<'a> {
+    face: ttf_parser::Face<'a>,
+    data: &'a [u8],
+    /// The family name the font database knows it by, to pick it in the SVG.
+    family: String,
+}
+
+impl<'a> FallbackFace<'a> {
+    fn new(data: &'a [u8]) -> Result<Self> {
+        use ttf_parser::name_id::{FAMILY, TYPOGRAPHIC_FAMILY};
+        let face = ttf_parser::Face::parse(data, 0).context("fallback font")?;
+        let family = [TYPOGRAPHIC_FAMILY, FAMILY]
+            .into_iter()
+            .find_map(|id| {
+                face.names()
+                    .into_iter()
+                    .find(|n| n.name_id == id && n.is_unicode())
+                    .and_then(|n| n.to_string())
+            })
+            .context("fallback font without a family name")?;
+        Ok(Self { face, data, family })
+    }
+
+    /// Width in px of `text` at `size`, shaped as resvg shapes it: marks and
+    /// ligatures of scripts like Bengali or Khmer take less than their
+    /// characters' advances.
+    fn width(&self, text: &str, size: f32) -> f32 {
+        use harfrust::{FontRef, ShapeOptions, ShaperData, UnicodeBuffer};
+        let Ok(font) = FontRef::new(self.data) else {
+            return 0.0;
+        };
+        let data = ShaperData::new(&font);
+        let shaper = data.shaper(&font).build();
+        let mut buffer = UnicodeBuffer::new();
+        buffer.push_str(text);
+        buffer.guess_segment_properties();
+        let glyphs = shaper.shape(buffer, ShapeOptions::new());
+        let units: i32 = glyphs.glyph_positions().iter().map(|p| p.x_advance).sum();
+        units as f32 * size / self.face.units_per_em() as f32
+    }
 }
 
 /// Width in px of `text` at `size` in a font. Characters the font lacks count as
@@ -173,19 +340,124 @@ fn face_width(face: &ttf_parser::Face, text: &str, size: f32) -> f32 {
     units * size / upem
 }
 
-impl Measure {
-    /// Parses the embedded fonts.
-    fn new() -> Result<Self> {
+impl<'a> Measure<'a> {
+    /// Parses the embedded fonts and the fallback fonts given.
+    fn new(fallbacks: &'a [Vec<u8>]) -> Result<Self> {
         Ok(Self {
             regular: ttf_parser::Face::parse(FONT_REGULAR, 0).context("regular font")?,
             bold: ttf_parser::Face::parse(FONT_BOLD, 0).context("bold font")?,
             number: ttf_parser::Face::parse(FONT_NUMBER, 0).context("number font")?,
+            fallbacks: fallbacks
+                .iter()
+                .map(|f| FallbackFace::new(f))
+                .collect::<Result<_>>()?,
         })
     }
 
-    /// Width in px of `text` in Inter, regular or bold.
+    /// `text` in runs of one font each: Inter (`None`), or for characters it
+    /// lacks the first fallback font that has them (its index). Spaces and
+    /// punctuation between two runs of the same fallback font join them, so
+    /// that resvg orders right-to-left words in one chunk.
+    fn runs(&self, text: &str) -> Vec<(Option<usize>, String)> {
+        let has = |f: &ttf_parser::Face, c| f.glyph_index(c).is_some();
+        let chars: Vec<char> = text.chars().collect();
+        let mut font: Vec<Option<usize>> = chars
+            .iter()
+            .map(|&c| match has(&self.regular, c) {
+                true => None,
+                false => self.fallbacks.iter().position(|f| has(&f.face, c)),
+            })
+            .collect();
+        // Spaces and punctuation Inter has, which go with either font.
+        let neutral =
+            |font: &[Option<usize>], j: usize| font[j].is_none() && !chars[j].is_alphanumeric();
+        for i in 1..chars.len() {
+            let Some(prev) = font[i - 1].filter(|_| neutral(&font, i)) else {
+                continue;
+            };
+            let next = (i..chars.len())
+                .find(|&j| !neutral(&font, j))
+                .and_then(|j| font[j]);
+            if next == Some(prev) && has(&self.fallbacks[prev].face, chars[i]) {
+                font[i] = Some(prev);
+            }
+        }
+        let mut runs: Vec<(Option<usize>, String)> = vec![];
+        for (c, f) in chars.into_iter().zip(font) {
+            match runs.last_mut() {
+                Some((last, run)) if *last == f => run.push(c),
+                _ => runs.push((f, c.to_string())),
+            }
+        }
+        runs
+    }
+
+    /// Regular `text` at `size`, starting at `x`, as SVG text content: escaped,
+    /// with each of its [`runs`](Measure::runs) in a fallback font in a
+    /// `<tspan>` of that font. Then every run gets its own `x`, which makes it
+    /// a text chunk resvg shapes on its own: shaped together, resvg mixes the
+    /// fonts' glyphs, which breaks scripts whose shaping changes the number of
+    /// glyphs (Bengali, Khmer…), and may take characters from Tiny5 Mono.
+    fn markup(&self, text: &str, x: f32, size: f32) -> String {
+        let runs = self.runs(text);
+        if runs.iter().all(|(f, _)| f.is_none()) {
+            return esc(text);
+        }
+        // The runs' byte ranges in `text`.
+        let mut spans = vec![];
+        let mut start = 0;
+        for (f, run) in &runs {
+            spans.push((*f, start..start + run.len()));
+            start += run.len();
+        }
+        // The pieces in the order they're drawn, left to right: resvg lays
+        // each chunk out as a left-to-right line, so a name whose first letter
+        // is right-to-left ("تملي معاك - Amr Diab") is put in order here.
+        let bidi = unicode_bidi::BidiInfo::new(text, None);
+        let mut pieces = vec![];
+        for para in &bidi.paragraphs {
+            let (levels, visual) = bidi.visual_runs(para, para.range.clone());
+            for r in visual {
+                let mut parts: Vec<(Option<usize>, &str)> = spans
+                    .iter()
+                    .filter_map(|(f, s)| {
+                        let (a, b) = (s.start.max(r.start), s.end.min(r.end));
+                        (a < b).then(|| (*f, &text[a..b]))
+                    })
+                    .collect();
+                if levels[r.start].is_rtl() {
+                    parts.reverse();
+                }
+                pieces.extend(parts);
+            }
+        }
+        let mut out = String::new();
+        let mut x = x;
+        for (f, piece) in pieces {
+            let family = match f {
+                Some(f) => format!(" font-family='{}'", esc(&self.fallbacks[f].family)),
+                None => String::new(),
+            };
+            out.push_str(&format!("<tspan x='{x:.1}'{family}>{}</tspan>", esc(piece)));
+            x += self.width(piece, size, false);
+        }
+        out
+    }
+
+    /// Width in px of `text` in Inter, regular or bold, with its characters
+    /// Inter lacks in the fallback fonts.
     fn width(&self, text: &str, size: f32, bold: bool) -> f32 {
-        face_width(if bold { &self.bold } else { &self.regular }, text, size)
+        let face = if bold { &self.bold } else { &self.regular };
+        if self.fallbacks.is_empty() {
+            return face_width(face, text, size);
+        }
+        self.runs(text)
+            .iter()
+            .map(|(f, run)| match f {
+                Some(f) => self.fallbacks[*f].width(run, size),
+                None => face_width(face, run, size),
+            })
+            .sum()
     }
 
     /// Truncates the text so it fits in `max` px, adding "…".
@@ -235,7 +507,8 @@ pub struct Bar {
 
 impl Svg {
     /// Adds a line of Inter text with `y` as its baseline. `anchor` is the SVG
-    /// `text-anchor`: "start", "middle" or "end".
+    /// `text-anchor`: "start", "middle" or "end". `content` is escaped here;
+    /// [`Svg::text_markup`] takes it as it goes in the SVG.
     #[allow(clippy::too_many_arguments)]
     fn text(
         &mut self,
@@ -247,10 +520,24 @@ impl Svg {
         anchor: &str,
         content: &str,
     ) {
+        self.text_markup(x, y, size, bold, fill, anchor, &esc(content));
+    }
+
+    /// Like [`Svg::text`], with `content` already as SVG text content.
+    #[allow(clippy::too_many_arguments)]
+    fn text_markup(
+        &mut self,
+        x: f32,
+        y: f32,
+        size: f32,
+        bold: bool,
+        fill: &str,
+        anchor: &str,
+        content: &str,
+    ) {
         self.body.push_str(&format!(
-            "<text x='{x:.1}' y='{y:.1}' font-size='{size}' font-weight='{}' fill='{fill}' text-anchor='{anchor}'>{}</text>\n",
+            "<text x='{x:.1}' y='{y:.1}' font-size='{size}' font-weight='{}' fill='{fill}' text-anchor='{anchor}'>{content}</text>\n",
             if bold { 700 } else { 400 },
-            esc(content)
         ));
     }
 
@@ -311,9 +598,10 @@ pub fn build_svg(
     by: RankBy,
     accent: &'static str,
     top: usize,
+    fallbacks: &[Vec<u8>],
 ) -> Result<(String, Vec<Bar>)> {
     let condensed = top > IMAGE_TOPS[0];
-    let m = Measure::new()?;
+    let m = Measure::new(fallbacks)?;
     let mut svg = Svg {
         body: String::new(),
         accent,
@@ -691,29 +979,44 @@ fn list(
             None => (ARTIST, centered(ARTIST)),
         };
         let name = m.fit(&item.name, name_size, false, max_w);
-        svg.text(x, name_y, name_size, false, INK, "start", &name);
+        svg.text_markup(
+            x,
+            name_y,
+            name_size,
+            false,
+            INK,
+            "start",
+            &m.markup(&name, x, name_size),
+        );
         if let Some(detail) = &item.detail {
             let (artist, number, unit) = song_info(m, detail, item, by, INFO, max_w);
             let accent = svg.accent;
+            let artist_x = x
+                + m.width(&number, INFO, true)
+                + m.width(&format!("{unit}{INFO_SEP}"), INFO, false);
             svg.body.push_str(&format!(
                 "<text x='{x:.1}' y='{:.1}' font-size='{INFO}' fill='{QUIET}'><tspan font-weight='700' fill='{accent}'>{}</tspan>{unit}{INFO_SEP}{}</text>\n",
                 y + INFO_DY,
                 esc(&number),
-                esc(&artist)
+                m.markup(&artist, artist_x, INFO)
             ));
         }
         y += ROW_H;
     }
 }
 
-/// Converts the SVG to PNG.
-pub fn png(svg: &str) -> Result<Vec<u8>> {
+/// Converts the SVG to PNG, with the fallback fonts given (as for [`build_svg`])
+/// for the characters Inter lacks.
+pub fn png(svg: &str, fallbacks: &[Vec<u8>]) -> Result<Vec<u8>> {
     let mut opt = usvg::Options::default();
     {
         let db = Arc::make_mut(&mut opt.fontdb);
         db.load_font_data(FONT_REGULAR.to_vec());
         db.load_font_data(FONT_BOLD.to_vec());
         db.load_font_data(FONT_NUMBER.to_vec());
+        for f in fallbacks {
+            db.load_font_data(f.clone());
+        }
     }
     let tree = usvg::Tree::from_str(svg, &opt).context("invalid SVG")?;
     let mut pixmap =
@@ -725,6 +1028,152 @@ pub fn png(svg: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fallback font's file, from `assets/fonts/`.
+    fn font(file: &str) -> Vec<u8> {
+        std::fs::read(format!(
+            "{}/assets/fonts/{file}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn each_fallback_has_its_script() {
+        let samples = [
+            "花譜ムーンライト한국",
+            "🌙",
+            "عربي",
+            "עברית",
+            "ไทย",
+            "हिन्दी",
+            "বাংলা",
+            "தமிழ்",
+            "Հայերեն",
+            "ქართული",
+            "አማርኛ",
+            "ខ្មែរ",
+        ];
+        for (f, sample) in FALLBACKS.iter().zip(samples) {
+            let bytes = font(f.file);
+            let face = ttf_parser::Face::parse(&bytes, 0).unwrap();
+            for c in sample.chars() {
+                assert!(face.glyph_index(c).is_some(), "{} lacks {c}", f.file);
+                assert!(
+                    f.ranges.iter().any(|(lo, hi)| (*lo..=*hi).contains(&c)),
+                    "{} range lacks {c}",
+                    f.file
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn needs_fonts_only_for_what_inter_lacks() {
+        let day = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let ranked = |name: &str, detail: Option<&str>| Ranked {
+            name: name.into(),
+            detail: detail.map(Into::into),
+            ms: 60_000,
+            plays: 1,
+        };
+        let s = |artists, tracks| Stats {
+            from: day,
+            to: day,
+            total_ms: 60_000,
+            estimated_ms: 0,
+            plays: 1,
+            by_month: vec![((2025, 1), 1)],
+            top_artists: artists,
+            top_tracks: tracks,
+            distinct_artists: 0,
+            distinct_tracks: 0,
+            top_day: None,
+            top_hour: None,
+            by_source: vec![],
+        };
+        let files =
+            |s: &Stats| -> Vec<&str> { needed_fonts(s).unwrap().iter().map(|f| f.file).collect() };
+        assert!(
+            files(&s(
+                vec![ranked("Beyoncé", None), ranked("Кино", None)],
+                vec![]
+            ))
+            .is_empty()
+        );
+        assert_eq!(
+            files(&s(
+                vec![ranked("Fairuz فيروز", None)],
+                vec![ranked("Moon 🌙", Some("花譜"))]
+            )),
+            [
+                "NotoSansCJKjp-Regular.otf",
+                "NotoEmoji.ttf",
+                "NotoSansArabic-Regular.otf"
+            ]
+        );
+    }
+
+    #[test]
+    fn names_inter_lacks_go_in_runs_of_their_font() {
+        let fonts: Vec<Vec<u8>> = ["NotoSansArabic-Regular.otf", "NotoSansBengali-Regular.otf"]
+            .map(font)
+            .into();
+        let m = Measure::new(&fonts).unwrap();
+        // Latin text stays as it was.
+        assert_eq!(m.markup("Rosalía & Co", 60.0, 36.0), "Rosalía &amp; Co");
+        // Punctuation between two Arabic words joins them in one run.
+        let runs = m.runs("Amr محمد - عبده!");
+        assert_eq!(
+            runs,
+            [
+                (None, "Amr ".to_string()),
+                (Some(0), "محمد - عبده".to_string()),
+                (None, "!".to_string()),
+            ]
+        );
+        // A name that starts right to left is drawn from the right: the
+        // Latin words go on the left.
+        let svg = m.markup("تملي معاك - Amr Diab", 60.0, 36.0);
+        assert!(
+            svg.starts_with("<tspan x='60.0'>Amr Diab</tspan><tspan x='"),
+            "{svg}"
+        );
+        assert!(
+            svg.ends_with(" font-family='Noto Sans Arabic'>تملي معاك</tspan>"),
+            "{svg}"
+        );
+        let svg = m.markup("Amr محمد", 60.0, 36.0);
+        assert!(
+            svg.starts_with("<tspan x='60.0'>Amr </tspan><tspan x='"),
+            "{svg}"
+        );
+        assert!(
+            svg.ends_with(" font-family='Noto Sans Arabic'>محمد</tspan>"),
+            "{svg}"
+        );
+        // Bengali conjuncts are narrower than their characters' advances.
+        let text = "ক্যান্ডি";
+        let advances = face_width(&m.fallbacks[1].face, text, 36.0);
+        assert!(m.width(text, 36.0, false) < advances * 0.9);
+    }
+
+    #[test]
+    fn measures_and_draws_with_the_fallbacks() {
+        let cjk = vec![font("NotoSansCJKjp-Regular.otf")];
+        let without = Measure::new(&[]).unwrap();
+        let with = Measure::new(&cjk).unwrap();
+        // A CJK character is a full em wide, not the 0.6 em of a missing one.
+        assert!((with.width("花", 100.0, false) - 100.0).abs() < 1.0);
+        assert_eq!(
+            with.width("Suisei", 36.0, false),
+            without.width("Suisei", 36.0, false)
+        );
+        let svg = format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='{W}' height='{H}' font-family='Inter'><text x='60' y='200' font-size='80' fill='#fff'>花譜</text></svg>"
+        );
+        assert_ne!(png(&svg, &[]).unwrap(), png(&svg, &cjk).unwrap());
+    }
 
     #[test]
     fn logo_takes_the_image_colors() {
@@ -744,12 +1193,12 @@ mod tests {
             top_hour: None,
             by_source: vec![],
         };
-        let (svg, bars) = build_svg(&s, RankBy::Plays, "#5AA9FF", 5).unwrap();
+        let (svg, bars) = build_svg(&s, RankBy::Plays, "#5AA9FF", 5, &[]).unwrap();
         assert_eq!(bars.len(), 1);
         assert!(!svg.contains("var("), "a CSS variable is left in the image");
         assert!(svg.contains("style=\"fill:#5AA9FF\""));
         assert!(svg.contains(&format!("style=\"fill:{INK}\"")));
-        png(&svg).unwrap();
+        png(&svg, &[]).unwrap();
     }
 
     #[test]
@@ -773,7 +1222,7 @@ mod tests {
         let periods = |bars: &[Bar]| bars.iter().map(|b| (b.from, b.to)).collect::<Vec<_>>();
 
         let months = stats(vec![((2024, 1), 0), ((2024, 2), 5), ((2024, 3), 9)]);
-        let (_, bars) = build_svg(&months, RankBy::Plays, "#5AA9FF", 5).unwrap();
+        let (_, bars) = build_svg(&months, RankBy::Plays, "#5AA9FF", 5, &[]).unwrap();
         assert_eq!(
             periods(&bars),
             [
@@ -792,7 +1241,7 @@ mod tests {
         let long = (1..=25)
             .map(|i| ((2023 + (i - 1) / 12, (i - 1) as u32 % 12 + 1), 1))
             .collect();
-        let (_, bars) = build_svg(&stats(long), RankBy::Plays, "#5AA9FF", 10).unwrap();
+        let (_, bars) = build_svg(&stats(long), RankBy::Plays, "#5AA9FF", 10, &[]).unwrap();
         assert_eq!(
             periods(&bars),
             [
@@ -816,7 +1265,7 @@ mod tests {
 
     #[test]
     fn song_info_shows_the_ranked_figure() {
-        let m = Measure::new().unwrap();
+        let m = Measure::new(&[]).unwrap();
         let item = Ranked {
             name: String::new(),
             detail: None,
@@ -841,7 +1290,7 @@ mod tests {
 
     #[test]
     fn chart_labels_fit_their_slots() {
-        let m = Measure::new().unwrap();
+        let m = Measure::new(&[]).unwrap();
         // The slot `chart` gives each of `n` bars.
         let slot = |n: i32| (W - 2.0 * INNER_LEFT + 16.0) / n as f32;
         let labels = |n: i32| {
@@ -865,7 +1314,7 @@ mod tests {
 
     #[test]
     fn shortens_one_digit_years() {
-        let m = Measure::new().unwrap();
+        let m = Measure::new(&[]).unwrap();
         let years: Vec<String> = (1..=2025).map(|y: i32| y.to_string()).collect();
         let (ls, _) = chart_labels(&m, years, 1.0);
         assert_eq!((ls[0].as_str(), ls[2024].as_str()), ("’1", "’25"));

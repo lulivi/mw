@@ -4,7 +4,7 @@
 
 Your own "Wrapped" from your Spotify and YouTube Music data: total minutes, minutes per month, top artists and top songs, for any date range you want. It creates a 1080×1920 vertical image ready to share from your phone.
 
-Everything runs locally: your data never leaves your computer. The only download is the shared [song database](data/README.md) (no data of yours is sent); `--offline` skips it.
+Everything runs locally: your data never leaves your computer. The only downloads are the shared [song database](data/README.md) and, for names in scripts like Japanese, Arabic or emoji, the fonts to draw them (no data of yours is sent); `--offline` skips them.
 
 - [Use it in the browser](#use-it-in-the-browser)
 - [Samples](#samples)
@@ -138,10 +138,11 @@ cargo run --release -- --help      # build and run with arguments
 ./scripts/dist.sh [target…]        # cross-compile release archives into dist/ (host's target by default; needs Docker)
 ```
 
-Layout: `src/sources/` (one reader per service, which tells the files apart by their contents and opens ZIPs) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `songdb.rs` loads the song database and applies its lengths, `lengths.rs` measures song lengths from Spotify full plays and defines the contribution file, `musicbrainz.rs` looks up song lengths for `mw db resolve`, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere. `main.rs` is the command line; the rest is a library that `web/` compiles to WebAssembly for the web page.
+Layout: `src/sources/` (one reader per service, which tells the files apart by their contents and opens ZIPs) → `model.rs` (`Play`) → `stats.rs` (filters and aggregates) → `render.rs` (SVG → PNG with resvg). `songdb.rs` loads the song database and applies its lengths, `lengths.rs` measures song lengths from Spotify full plays and defines the contribution file, `musicbrainz.rs` looks up song lengths for `mw db resolve`, and `normalize.rs` builds the keys that merge artists and songs. The fonts are embedded in the binary so the image looks the same everywhere, except the fallback fonts in `assets/fonts/` for the characters Inter lacks: `mw` downloads only the ones a name on the image needs, from `main`, and keeps them in `<cache folder>/mw/fonts/` (with `--offline`, or when the download fails, those characters show as boxes). `main.rs` is the command line; the rest is a library that `web/` compiles to WebAssembly for the web page.
 
 ## Credits
 
 - The mw logo and favicons, by [Lorena Jiménez](https://github.com/Lorena-J).
 - [Inter](https://github.com/rsms/inter) (Regular and Bold), Copyright (c) 2016 The Inter Project Authors, SIL Open Font License 1.1: `assets/OFL-Inter.txt`.
 - [Tiny5 Mono](https://github.com/Gissio/font_Tiny5Mono) Regular, for the main figure, SIL Open Font License 1.1: `assets/OFL-Tiny5Mono.txt`.
+- [Noto](https://github.com/notofonts) Sans CJK JP, Noto Emoji and Noto Sans Arabic, Hebrew, Thai, Devanagari, Bengali, Tamil, Armenian, Georgian, Ethiopic and Khmer (Regular), the fallback fonts in `assets/fonts/`, SIL Open Font License 1.1: `assets/OFL-Noto.txt`.

@@ -3,13 +3,19 @@
 
 import init, { Session } from "./pkg/mw_web.js";
 
+/** This repository on `main`, which `mw` downloads from too. */
+const REPO_URL = "https://raw.githubusercontent.com/lulivi/mw/main/";
 /** The shared song database: song lengths for YouTube Music plays. */
-const DB_URL = "https://raw.githubusercontent.com/lulivi/mw/main/data/songs.json";
+const DB_URL = REPO_URL + "data/songs.json";
+/** Where the fallback fonts for the characters Inter lacks are. */
+const FONTS_URL = REPO_URL + "assets/fonts/";
 
 const ready = init();
 let session;
 /** The song database download, started when the first YouTube history is added. */
 let db;
+/** Fallback fonts that failed to download, not tried again. */
+const failedFonts = new Set();
 
 let queue = Promise.resolve();
 onmessage = (e) => {
@@ -69,6 +75,18 @@ async function loadDb() {
   }
 }
 
+/** Downloads a fallback font into the session; without it its characters show as boxes. */
+async function loadFont(file) {
+  try {
+    const resp = await fetch(FONTS_URL + file);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    session.add_font(file, new Uint8Array(await resp.arrayBuffer()));
+  } catch (err) {
+    failedFonts.add(file);
+    console.warn(`font ${file}:`, err);
+  }
+}
+
 /** Makes the image. */
 async function create(o) {
   if (db) {
@@ -76,7 +94,16 @@ async function create(o) {
     await db;
   }
   progress("Making the image…");
-  const r = session.create(o.from, o.to, o.rankBy, o.top, o.color, o.tz);
+  const make = () => session.create(o.from, o.to, o.rankBy, o.top, o.color, o.tz);
+  let r = make();
+  // Names in scripts Inter lacks: download their fonts, kept for later images.
+  const fonts = r.missing_fonts.filter((f) => !failedFonts.has(f));
+  if (fonts.length) {
+    progress("Downloading fonts…");
+    await Promise.all(fonts.map(loadFont));
+    progress("Making the image…");
+    r = make();
+  }
   const png = r.png;
   const bars = JSON.parse(r.bars);
   postMessage({ type: "result", png, text: r.text, notes: r.notes, bars }, [png.buffer]);

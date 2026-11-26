@@ -823,11 +823,13 @@ dependencies = [
  "chrono-tz",
  "clap",
  "dirs",
+ "harfrust",
  "resvg",
  "serde",
  "serde_json",
  "tempfile",
  "ttf-parser",
+ "unicode-bidi",
  "unicode-normalization",
  "ureq",
  "zip",
@@ -842,6 +844,7 @@ dependencies = [
  "chrono-tz",
  "mw",
  "serde_json",
+ "ttf-parser",
  "wasm-bindgen",
 ]
 
