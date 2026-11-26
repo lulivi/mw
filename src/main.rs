@@ -88,7 +88,7 @@ struct DbArgs {
     #[arg(long, value_name = "URL|PATH", conflicts_with = "offline")]
     db: Option<String>,
 
-    /// Use the cached copy of the song database instead of downloading it
+    /// Use the cached copies of the song database and the fonts instead of downloading them
     #[arg(long)]
     offline: bool,
 }
@@ -262,12 +262,65 @@ fn main() -> Result<()> {
     print!("\n{}", text::stats(&stats));
 
     if !cli.no_image {
-        let (svg, _) = render::build_svg(&stats, rank_by, cli.color.hex(), cli.top, &[])?;
-        let png = render::png(&svg, &[])?;
+        let fonts = fallback_fonts(&stats, cli.db.offline)?;
+        let (svg, _) = render::build_svg(&stats, rank_by, cli.color.hex(), cli.top, &fonts)?;
+        let png = render::png(&svg, &fonts)?;
         fs::write(&cli.out, png).with_context(|| format!("cannot save {}", cli.out.display()))?;
         println!("\nImage saved to {}", cli.out.display());
     }
     Ok(())
+}
+
+/// The fallback fonts the image of `stats` needs, from `<cache folder>/mw/fonts/`,
+/// downloaded into it first when missing (unless `offline`). One that can't be
+/// had is left out with a warning: its characters show as boxes.
+fn fallback_fonts(stats: &stats::Stats, offline: bool) -> Result<Vec<Vec<u8>>> {
+    let dir = dirs::cache_dir().map(|d| d.join("mw").join("fonts"));
+    let mut fonts = vec![];
+    for f in render::needed_fonts(stats)? {
+        let path = dir.as_ref().map(|d| d.join(f.file));
+        let cached = path.as_ref().and_then(|p| fs::read(p).ok());
+        let font = match cached {
+            Some(bytes) => Ok(bytes),
+            None if offline => Err(anyhow::anyhow!("not in the cache (--offline)")),
+            None => download_font(f.file, path.as_deref()),
+        };
+        match font.and_then(|b| {
+            ttf_parser::Face::parse(&b, 0).context("not a valid font")?;
+            Ok(b)
+        }) {
+            Ok(bytes) => fonts.push(bytes),
+            Err(e) => eprintln!(
+                "warning: font {}: {e:#}; its characters show as boxes",
+                f.file
+            ),
+        }
+    }
+    Ok(fonts)
+}
+
+/// Downloads a fallback font and saves it at `cache`, when there's one.
+fn download_font(file: &str, cache: Option<&Path>) -> Result<Vec<u8>> {
+    let url = format!("{}{file}", render::FONTS_URL);
+    eprintln!("Downloading the font {file}…");
+    let bytes = ureq::get(&url)
+        .config()
+        .timeout_global(Some(std::time::Duration::from_secs(120)))
+        .build()
+        .call()
+        .and_then(|mut r| r.body_mut().with_config().limit(64 << 20).read_to_vec())
+        .with_context(|| format!("could not download {url}"))?;
+    if let Some(path) = cache {
+        // Written aside and renamed, so an interrupted run leaves no partial font.
+        let tmp = path.with_extension("part");
+        let saved = fs::create_dir_all(path.parent().unwrap_or(path))
+            .and_then(|_| fs::write(&tmp, &bytes))
+            .and_then(|_| fs::rename(&tmp, path));
+        if let Err(e) = saved {
+            eprintln!("warning: cannot cache {}: {e}", path.display());
+        }
+    }
+    Ok(bytes)
 }
 
 /// Loads the Spotify export and reports how many plays were read.
