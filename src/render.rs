@@ -358,8 +358,6 @@ impl<'a> Measure<'a> {
     /// lacks the first fallback font that has them (its index). Spaces and
     /// punctuation between two runs of the same fallback font join them, so
     /// that resvg orders right-to-left words in one chunk.
-    // ponytail: a right-to-left name with Latin words in it keeps its runs
-    // left to right; reorder the runs with unicode-bidi if that shows up.
     fn runs(&self, text: &str) -> Vec<(Option<usize>, String)> {
         let has = |f: &ttf_parser::Face, c| f.glyph_index(c).is_some();
         let chars: Vec<char> = text.chars().collect();
@@ -405,15 +403,43 @@ impl<'a> Measure<'a> {
         if runs.iter().all(|(f, _)| f.is_none()) {
             return esc(text);
         }
+        // The runs' byte ranges in `text`.
+        let mut spans = vec![];
+        let mut start = 0;
+        for (f, run) in &runs {
+            spans.push((*f, start..start + run.len()));
+            start += run.len();
+        }
+        // The pieces in the order they're drawn, left to right: resvg lays
+        // each chunk out as a left-to-right line, so a name whose first letter
+        // is right-to-left ("تملي معاك - Amr Diab") is put in order here.
+        let bidi = unicode_bidi::BidiInfo::new(text, None);
+        let mut pieces = vec![];
+        for para in &bidi.paragraphs {
+            let (levels, visual) = bidi.visual_runs(para, para.range.clone());
+            for r in visual {
+                let mut parts: Vec<(Option<usize>, &str)> = spans
+                    .iter()
+                    .filter_map(|(f, s)| {
+                        let (a, b) = (s.start.max(r.start), s.end.min(r.end));
+                        (a < b).then(|| (*f, &text[a..b]))
+                    })
+                    .collect();
+                if levels[r.start].is_rtl() {
+                    parts.reverse();
+                }
+                pieces.extend(parts);
+            }
+        }
         let mut out = String::new();
         let mut x = x;
-        for (f, run) in &runs {
+        for (f, piece) in pieces {
             let family = match f {
-                Some(f) => format!(" font-family='{}'", esc(&self.fallbacks[*f].family)),
+                Some(f) => format!(" font-family='{}'", esc(&self.fallbacks[f].family)),
                 None => String::new(),
             };
-            out.push_str(&format!("<tspan x='{x:.1}'{family}>{}</tspan>", esc(run)));
-            x += self.width(run, size, false);
+            out.push_str(&format!("<tspan x='{x:.1}'{family}>{}</tspan>", esc(piece)));
+            x += self.width(piece, size, false);
         }
         out
     }
@@ -1105,6 +1131,17 @@ mod tests {
                 (Some(0), "محمد - عبده".to_string()),
                 (None, "!".to_string()),
             ]
+        );
+        // A name that starts right to left is drawn from the right: the
+        // Latin words go on the left.
+        let svg = m.markup("تملي معاك - Amr Diab", 60.0, 36.0);
+        assert!(
+            svg.starts_with("<tspan x='60.0'>Amr Diab</tspan><tspan x='"),
+            "{svg}"
+        );
+        assert!(
+            svg.ends_with(" font-family='Noto Sans Arabic'>تملي معاك</tspan>"),
+            "{svg}"
         );
         let svg = m.markup("Amr محمد", 60.0, 36.0);
         assert!(
