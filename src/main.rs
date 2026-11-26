@@ -262,8 +262,8 @@ fn main() -> Result<()> {
     print!("\n{}", text::stats(&stats));
 
     if !cli.no_image {
-        let (svg, _) = render::build_svg(&stats, rank_by, cli.color.hex(), cli.top)?;
-        let png = render::png(&svg)?;
+        let (svg, _) = render::build_svg(&stats, rank_by, cli.color.hex(), cli.top, &[])?;
+        let png = render::png(&svg, &[])?;
         fs::write(&cli.out, png).with_context(|| format!("cannot save {}", cli.out.display()))?;
         println!("\nImage saved to {}", cli.out.display());
     }

@@ -823,6 +823,7 @@ dependencies = [
  "chrono-tz",
  "clap",
  "dirs",
+ "harfrust",
  "resvg",
  "serde",
  "serde_json",

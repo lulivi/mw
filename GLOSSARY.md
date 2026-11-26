@@ -59,3 +59,7 @@ _Avoid_: Graph, histogram
 **Accent**:
 The color the listener picks, one of a fixed set, for the main figure, the highlights and the red of the logo, on the image and the web page alike.
 _Avoid_: Theme color, highlight color
+
+**Fallback font**:
+A Noto font for the characters Inter lacks (Japanese, Arabic, emoji…), downloaded only when a name on the image needs it.
+_Avoid_: Extra font, CJK font
