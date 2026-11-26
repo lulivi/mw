@@ -23,7 +23,7 @@ use crate::model::{Play, Source};
 use crate::normalize::{clean_title, track_key};
 
 /// Where the database is downloaded from by default.
-pub const DEFAULT_URL: &str = "https://raw.githubusercontent.com/lulivi/mw/main/data/songs.json";
+pub const DEFAULT_URL: &str = repo_url!("data/songs.json");
 /// Format version this program reads.
 const VERSION: u32 = 1;
 /// Song lengths an import accepts, in seconds.

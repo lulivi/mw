@@ -22,7 +22,7 @@ const FONT_BOLD: &[u8] = include_bytes!("../assets/Inter-Bold.otf");
 const FONT_NUMBER: &[u8] = include_bytes!("../assets/Tiny5Mono-Regular.otf");
 
 /// Where the fallback fonts are downloaded from: `assets/fonts/` on `main`.
-pub const FONTS_URL: &str = "https://raw.githubusercontent.com/lulivi/mw/main/assets/fonts/";
+pub const FONTS_URL: &str = repo_url!("assets/fonts/");
 
 /// A fallback font: a Noto font (SIL Open Font License 1.1, see
 /// assets/OFL-Noto.txt) for characters Inter lacks, downloaded only when a name

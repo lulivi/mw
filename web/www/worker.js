@@ -3,10 +3,12 @@
 
 import init, { Session } from "./pkg/mw_web.js";
 
+/** This repository on `main`, which `mw` downloads from too. */
+const REPO_URL = "https://raw.githubusercontent.com/lulivi/mw/main/";
 /** The shared song database: song lengths for YouTube Music plays. */
-const DB_URL = "https://raw.githubusercontent.com/lulivi/mw/main/data/songs.json";
-/** Where the fallback fonts for the characters Inter lacks are, as for `mw`. */
-const FONTS_URL = "https://raw.githubusercontent.com/lulivi/mw/main/assets/fonts/";
+const DB_URL = REPO_URL + "data/songs.json";
+/** Where the fallback fonts for the characters Inter lacks are. */
+const FONTS_URL = REPO_URL + "assets/fonts/";
 
 const ready = init();
 let session;
