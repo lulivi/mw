@@ -4,7 +4,7 @@ members = [".", "web"]
 [package]
 name = "mw"
 description = "Music Wrapped: your listening recap from your Spotify and YouTube Music data"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 publish = false
 exclude = ["data/"]
