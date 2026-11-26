@@ -843,6 +843,7 @@ dependencies = [
  "chrono-tz",
  "mw",
  "serde_json",
+ "ttf-parser",
  "wasm-bindgen",
 ]
 

@@ -43,8 +43,12 @@ makes only these requests:
   Music songs. It holds no data of yours, and nothing of yours is sent to get
   it. If it can't be downloaded, YouTube Music plays keep the estimate, as in
   `mw`.
+- The fallback fonts (`assets/fonts/` from this repository) a name on the
+  image needs, when it has characters Inter lacks (Japanese, Arabic, emoji…),
+  as `mw` does. The image is made again once they're in; one that can't be
+  downloaded leaves its characters as boxes, and the notes say so.
 
-No analytics, fonts or other third-party files.
+No analytics or other third-party files.
 
 ## How it works
 

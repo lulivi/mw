@@ -26,6 +26,8 @@ pub struct Session {
     files: BTreeMap<u32, Vec<Content>>,
     /// The song database, once downloaded.
     db: Option<songdb::Db>,
+    /// The fallback fonts downloaded, by file name.
+    fonts: BTreeMap<String, Vec<u8>>,
 }
 
 /// An image and what goes with it.
@@ -41,6 +43,9 @@ pub struct Recap {
     /// `x`, `y`, `w`, `h` in px of the image, `from` and `to` as `YYYY-MM-DD`
     /// and `label` naming the period: "February 2025" or "2025".
     pub bars: String,
+    /// The fallback fonts the image needs and the session lacks (see
+    /// [`Session::add_font`]): their characters show as boxes.
+    pub missing_fonts: Vec<String>,
 }
 
 #[wasm_bindgen]
@@ -75,6 +80,13 @@ impl Session {
     pub fn set_db(&mut self, text: &str) -> Result<(), JsError> {
         let db = songdb::parse(text).context("the song database is not valid");
         self.db = Some(db.map_err(js)?);
+        Ok(())
+    }
+
+    /// Adds a fallback font, by its file name in `assets/fonts/`.
+    pub fn add_font(&mut self, file: String, bytes: Vec<u8>) -> Result<(), JsError> {
+        ttf_parser::Face::parse(&bytes, 0).map_err(|e| JsError::new(&format!("{file}: {e}")))?;
+        self.fonts.insert(file, bytes);
         Ok(())
     }
 
@@ -177,7 +189,22 @@ impl Session {
         let Some(stats) = stats::compute(&plays, &filters, top, rank_by) else {
             bail!("No plays in that date range.");
         };
-        let (svg, bars) = render::build_svg(&stats, rank_by, accent, top, &[])?;
+        // Only the fonts needed, in their order, so the image is the same as `mw`'s.
+        let mut fonts = vec![];
+        let mut missing_fonts = vec![];
+        for f in render::needed_fonts(&stats)? {
+            match self.fonts.get(f.file) {
+                Some(bytes) => fonts.push(bytes.clone()),
+                None => missing_fonts.push(f.file.to_string()),
+            }
+        }
+        if !missing_fonts.is_empty() {
+            notes.push(format!(
+                "Not downloaded: the fonts {}; their characters show as boxes",
+                missing_fonts.join(", ")
+            ));
+        }
+        let (svg, bars) = render::build_svg(&stats, rank_by, accent, top, &fonts)?;
         if stats.estimated_ms > 0 {
             notes.push(format!(
                 "Estimated: {} of the {} minutes, from YouTube Music plays the song database doesn't know",
@@ -186,7 +213,7 @@ impl Session {
             ));
         }
         Ok(Recap {
-            png: render::png(&svg, &[])?,
+            png: render::png(&svg, &fonts)?,
             text: text::stats(&stats),
             notes,
             bars: serde_json::Value::from_iter(bars.iter().map(|b| {
@@ -202,6 +229,7 @@ impl Session {
                 })
             }))
             .to_string(),
+            missing_fonts,
         })
     }
 }
