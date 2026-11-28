@@ -38,4 +38,8 @@ pub struct Play {
     pub source: Source,
     /// YouTube video ID (YouTube Music only), used to look up the song database.
     pub video_id: Option<String>,
+    /// Spotify track ID (extended history only), for the song's service link.
+    pub spotify_id: Option<String>,
+    /// YouTube channel ID (YouTube Music only), for the artist's service link.
+    pub channel_id: Option<String>,
 }

@@ -286,6 +286,8 @@ mod tests {
             estimated: src == Source::YouTubeMusic,
             source: src,
             video_id: None,
+            spotify_id: None,
+            channel_id: None,
         }
     }
 

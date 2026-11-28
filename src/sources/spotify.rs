@@ -22,6 +22,8 @@ struct ExtendedEntry {
     master_metadata_album_album_name: Option<String>,
     /// Why the play ended; `"trackdone"` means it reached the end of the song.
     reason_end: Option<String>,
+    /// `spotify:track:<id>`.
+    spotify_track_uri: Option<String>,
 }
 
 /// One play in the basic history.
@@ -90,6 +92,10 @@ fn parse_entries(text: &str) -> Option<Vec<(Play, Option<String>)>> {
                 estimated: false,
                 source: Source::Spotify,
                 video_id: None,
+                spotify_id: e
+                    .spotify_track_uri
+                    .and_then(|u| Some(u.strip_prefix("spotify:track:")?.to_string())),
+                channel_id: None,
             };
             Some((play, e.reason_end))
         })
@@ -124,6 +130,8 @@ pub(crate) fn parse_basic(text: &str) -> Option<Vec<Play>> {
                 estimated: false,
                 source: Source::Spotify,
                 video_id: None,
+                spotify_id: None,
+                channel_id: None,
             })
         })
         .collect();
@@ -137,13 +145,17 @@ mod tests {
     #[test]
     fn reads_extended_history_and_skips_podcasts() {
         let json = r#"[
-          {"ts":"2025-01-02T10:00:00Z","ms_played":200000,"master_metadata_track_name":"Song","master_metadata_album_artist_name":"Artist","master_metadata_album_album_name":"Album"},
+          {"ts":"2025-01-02T10:00:00Z","ms_played":200000,"master_metadata_track_name":"Song","master_metadata_album_artist_name":"Artist","master_metadata_album_album_name":"Album","spotify_track_uri":"spotify:track:4uLU6hMCjMI75M1A2tKUQC"},
           {"ts":"2025-01-02T11:00:00Z","ms_played":900000,"master_metadata_track_name":null,"master_metadata_album_artist_name":null,"episode_name":"Podcast"}
         ]"#;
         let plays = parse_extended(json).unwrap();
         assert_eq!(plays.len(), 1);
         assert_eq!(plays[0].artist, "Artist");
         assert_eq!(plays[0].ms_played, 200000);
+        assert_eq!(
+            plays[0].spotify_id.as_deref(),
+            Some("4uLU6hMCjMI75M1A2tKUQC")
+        );
     }
 
     #[test]

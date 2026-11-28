@@ -250,6 +250,8 @@ mod tests {
             estimated: false,
             source: Source::Spotify,
             video_id: None,
+            spotify_id: None,
+            channel_id: None,
         }
     }
 

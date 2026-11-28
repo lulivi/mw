@@ -32,6 +32,8 @@ struct Entry {
 #[derive(Deserialize)]
 struct Subtitle {
     name: Option<String>,
+    /// The channel's page, `https://www.youtube.com/channel/<id>`.
+    url: Option<String>,
 }
 
 /// Distinct titles needed to trust the wording detected from the file.
@@ -87,7 +89,8 @@ pub(crate) fn parse(text: &str, avg_minutes: f64) -> Option<Vec<Play>> {
         .into_iter()
         .filter_map(|e| {
             let track = strip_title(e.title.as_deref()?, &wording);
-            let artist = clean_artist(e.subtitles?.into_iter().next()?.name.as_deref()?);
+            let channel = e.subtitles?.into_iter().next()?;
+            let artist = clean_artist(channel.name.as_deref()?);
             if track.is_empty() || artist.is_empty() {
                 return None;
             }
@@ -105,6 +108,11 @@ pub(crate) fn parse(text: &str, avg_minutes: f64) -> Option<Vec<Play>> {
                 estimated: true,
                 source: Source::YouTubeMusic,
                 video_id,
+                spotify_id: None,
+                channel_id: channel
+                    .url
+                    .as_deref()
+                    .and_then(|u| Some(u.split_once("/channel/")?.1.to_string())),
             })
         })
         .collect();
@@ -233,7 +241,7 @@ mod tests {
     #[test]
     fn keeps_youtube_music_and_cleans() {
         let json = r#"[
-          {"header":"YouTube Music","title":"Has visto DESPECHÁ","titleUrl":"https://music.youtube.com/watch?v=1","subtitles":[{"name":"ROSALÍA - Topic"}],"time":"2025-02-01T20:00:00.123Z"},
+          {"header":"YouTube Music","title":"Has visto DESPECHÁ","titleUrl":"https://music.youtube.com/watch?v=1","subtitles":[{"name":"ROSALÍA - Topic","url":"https://www.youtube.com/channel/UCeO7xr4Zo3Lwq0xBJ3BsYmw"}],"time":"2025-02-01T20:00:00.123Z"},
           {"header":"YouTube","title":"Watched Cat video","titleUrl":"https://www.youtube.com/watch?v=2","subtitles":[{"name":"Cats"}],"time":"2025-02-01T20:05:00Z"},
           {"header":"YouTube Music","title":"Watched a video that has been removed","time":"2025-02-01T20:10:00Z"}
         ]"#;
@@ -243,6 +251,10 @@ mod tests {
         assert_eq!(plays[0].artist, "ROSALÍA");
         assert_eq!(plays[0].ms_played, 210_000);
         assert!(plays[0].estimated);
+        assert_eq!(
+            plays[0].channel_id.as_deref(),
+            Some("UCeO7xr4Zo3Lwq0xBJ3BsYmw")
+        );
     }
 
     #[test]
