@@ -263,7 +263,7 @@ fn main() -> Result<()> {
 
     if !cli.no_image {
         let fonts = fallback_fonts(&stats, cli.db.offline)?;
-        let (svg, _) = render::build_svg(&stats, rank_by, cli.color.hex(), cli.top, &fonts)?;
+        let (svg, ..) = render::build_svg(&stats, rank_by, cli.color.hex(), cli.top, &fonts)?;
         let png = render::png(&svg, &fonts)?;
         fs::write(&cli.out, png).with_context(|| format!("cannot save {}", cli.out.display()))?;
         println!("\nImage saved to {}", cli.out.display());

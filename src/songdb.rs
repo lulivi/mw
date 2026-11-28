@@ -436,6 +436,8 @@ mod tests {
             estimated: true,
             source: Source::YouTubeMusic,
             video_id: Some(id.into()),
+            spotify_id: None,
+            channel_id: None,
         }
     }
 

@@ -25,6 +25,12 @@ goes back to the period before, one click at a time; choosing a period in the
 options starts over. The downloaded image is the same as `mw`'s for that
 period: the bars are clickable only on the page.
 
+Clicking an artist or a song of the top lists opens it, in a new tab, on the
+service it was played on most (Spotify on a tie): the song itself when the
+history names it, the artist's YouTube Music channel, or else a search there.
+The extended Spotify history names each song; the basic one doesn't, and
+Spotify artists always open a search.
+
 On a computer the image stays on the right while you scroll, with a sample in
 its place until the first one is made. On a phone it comes after the options.
 The page follows the device's light or dark theme; the theme button at the top
@@ -47,6 +53,10 @@ makes only these requests:
   image needs, when it has characters Inter lacks (Japanese, Arabic, emoji…),
   as `mw` does. The image is made again once they're in; one that can't be
   downloaded leaves its characters as boxes, and the notes say so.
+
+Clicking an artist or song of the top lists opens Spotify or YouTube Music
+in a new tab, with only that artist or song in the address; nothing is sent
+before the click.
 
 No analytics or other third-party files.
 

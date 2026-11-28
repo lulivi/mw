@@ -194,7 +194,7 @@ worker.onmessage = ({ data: msg }) => {
     result(msg);
     created();
   } else if (msg.type === "error") {
-    showBars([]);
+    showBars([], []);
     $("status").textContent = "";
     $("error").hidden = false;
     $("error").textContent = msg.message;
@@ -225,28 +225,52 @@ function setReady(value, years) {
 const W = 1080;
 const H = 1920;
 
+/** Places an element over a box of the image, given in px of the image. */
+function place(el, { x, y, w, h }) {
+  const pct = (v, of) => `${(v / of) * 100}%`;
+  Object.assign(el.style, { left: pct(x, W), top: pct(y, H), width: pct(w, W), height: pct(h, H) });
+  return el;
+}
+
 /** Puts a button over each of the chart's bars, which shows its year or
- * month; none when there's a single bar. */
-function showBars(bars) {
+ * month (none when there's a single bar), and a link over each top list
+ * row, to its artist or song on the service it was played on most. */
+function showBars(bars, rows) {
   const clickable = bars.length > 1;
   $("bar-hint").hidden = !clickable;
-  const pct = (v, of) => `${(v / of) * 100}%`;
   $("bars").replaceChildren(
     ...(clickable ? bars : []).map((bar) => {
-      const button = document.createElement("button");
+      const button = place(document.createElement("button"), bar);
       button.type = "button";
-      Object.assign(button.style, {
-        left: pct(bar.x, W),
-        top: pct(bar.y, H),
-        width: pct(bar.w, W),
-        height: pct(bar.h, H),
-      });
       button.title = `Show ${bar.label}`;
       button.setAttribute("aria-label", button.title);
       button.addEventListener("click", () => showPeriod(bar));
       return button;
     }),
+    ...rows.map((row) => {
+      const a = place(document.createElement("a"), row);
+      a.href = serviceLink(row);
+      a.target = "_blank";
+      a.rel = "noopener";
+      const service = row.service === "spotify" ? "Spotify" : "YouTube Music";
+      const what = row.artist ? `${row.name} by ${row.artist}` : row.name;
+      a.title = `Open ${what} on ${service}`;
+      a.setAttribute("aria-label", a.title);
+      return a;
+    }),
   );
+}
+
+/** The page of a top list row's artist or song on its service, or a search
+ * there when its ID isn't known. */
+function serviceLink({ name, artist, service, id }) {
+  const query = encodeURIComponent(artist ? `${artist} ${name}` : name);
+  if (service === "spotify") {
+    if (id) return `https://open.spotify.com/track/${id}`;
+    return `https://open.spotify.com/search/${query}${artist ? "/tracks" : "/artists"}`;
+  }
+  if (id) return `https://music.youtube.com/${artist ? `watch?v=${id}` : `channel/${id}`}`;
+  return `https://music.youtube.com/search?q=${query}`;
 }
 
 /** The periods shown before each bar clicked, latest last. */
@@ -306,7 +330,7 @@ function showPeriod({ from, to }) {
 }
 
 /** Shows the image, with its download and share buttons and notes. */
-function result({ png, notes, bars }) {
+function result({ png, notes, bars, rows }) {
   const blob = new Blob([png], { type: "image/png" });
   if (imageUrl) URL.revokeObjectURL(imageUrl);
   imageUrl = URL.createObjectURL(blob);
@@ -324,7 +348,7 @@ function result({ png, notes, bars }) {
   share.hidden = !navigator.canShare?.({ files: [file] });
   share.onclick = () => navigator.share({ files: [file] }).catch(() => {});
 
-  showBars(bars);
+  showBars(bars, rows);
   $("error").hidden = true;
   $("output").hidden = false;
 }

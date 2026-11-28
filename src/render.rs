@@ -489,6 +489,17 @@ struct Svg {
     accent: &'static str,
     /// The chart's bars with plays.
     bars: Vec<Bar>,
+    /// The top lists' rows: the artists', then the songs'.
+    rows: Vec<Rect>,
+}
+
+/// Where something is on the image: left, top, width and height, in px.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
 }
 
 /// A bar of the chart: where it is on the image, label included, and the
@@ -599,13 +610,14 @@ pub fn build_svg(
     accent: &'static str,
     top: usize,
     fallbacks: &[Vec<u8>],
-) -> Result<(String, Vec<Bar>)> {
+) -> Result<(String, Vec<Bar>, Vec<Rect>)> {
     let condensed = top > IMAGE_TOPS[0];
     let m = Measure::new(fallbacks)?;
     let mut svg = Svg {
         body: String::new(),
         accent,
         bars: vec![],
+        rows: vec![],
     };
 
     let range = range_label(s.from, s.to);
@@ -792,7 +804,7 @@ pub fn build_svg(
          <rect width='100%' height='100%' fill='{BG}'/>\n{}</svg>\n",
         svg.body
     );
-    Ok((image, svg.bars))
+    Ok((image, svg.bars, svg.rows))
 }
 
 /// Draws the chart with the tallest bar's top at `y0` and bars up to `bars_h`
@@ -1001,6 +1013,13 @@ fn list(
                 m.markup(&artist, artist_x, INFO)
             ));
         }
+        // The whole row, a little over its text, for the page's links.
+        svg.rows.push(Rect {
+            x: x0 - 8.0,
+            y: y - NAME - 4.0,
+            w: w + 16.0,
+            h: ROW_H - 4.0,
+        });
         y += ROW_H;
     }
 }
@@ -1028,6 +1047,7 @@ pub fn png(svg: &str, fallbacks: &[Vec<u8>]) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Source;
 
     /// A fallback font's file, from `assets/fonts/`.
     fn font(file: &str) -> Vec<u8> {
@@ -1076,6 +1096,8 @@ mod tests {
             detail: detail.map(Into::into),
             ms: 60_000,
             plays: 1,
+            source: Source::Spotify,
+            id: None,
         };
         let s = |artists, tracks| Stats {
             from: day,
@@ -1176,6 +1198,42 @@ mod tests {
     }
 
     #[test]
+    fn returns_a_row_per_top_list_entry() {
+        let day = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let ranked = |name: &str, detail: Option<&str>| Ranked {
+            name: name.into(),
+            detail: detail.map(Into::into),
+            ms: 60_000,
+            plays: 1,
+            source: Source::Spotify,
+            id: None,
+        };
+        let s = Stats {
+            from: day,
+            to: day,
+            total_ms: 60_000,
+            estimated_ms: 0,
+            plays: 1,
+            by_month: vec![((2025, 1), 1)],
+            top_artists: vec![ranked("A", None), ranked("B", None)],
+            top_tracks: vec![ranked("T", Some("A"))],
+            distinct_artists: 2,
+            distinct_tracks: 1,
+            top_day: None,
+            top_hour: None,
+            by_source: vec![],
+        };
+        let (_, _, rows) = build_svg(&s, RankBy::Plays, "#5AA9FF", 5, &[]).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert!(rows[0].y + rows[0].h <= rows[1].y, "{rows:?}");
+        assert!(rows[1].x + rows[1].w <= rows[2].x, "{rows:?}");
+        assert!(
+            rows.iter()
+                .all(|r| r.x >= 0.0 && r.x + r.w <= W && r.y + r.h <= H)
+        );
+    }
+
+    #[test]
     fn logo_takes_the_image_colors() {
         let day = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
         let s = Stats {
@@ -1193,7 +1251,7 @@ mod tests {
             top_hour: None,
             by_source: vec![],
         };
-        let (svg, bars) = build_svg(&s, RankBy::Plays, "#5AA9FF", 5, &[]).unwrap();
+        let (svg, bars, _) = build_svg(&s, RankBy::Plays, "#5AA9FF", 5, &[]).unwrap();
         assert_eq!(bars.len(), 1);
         assert!(!svg.contains("var("), "a CSS variable is left in the image");
         assert!(svg.contains("style=\"fill:#5AA9FF\""));
@@ -1222,7 +1280,7 @@ mod tests {
         let periods = |bars: &[Bar]| bars.iter().map(|b| (b.from, b.to)).collect::<Vec<_>>();
 
         let months = stats(vec![((2024, 1), 0), ((2024, 2), 5), ((2024, 3), 9)]);
-        let (_, bars) = build_svg(&months, RankBy::Plays, "#5AA9FF", 5, &[]).unwrap();
+        let (_, bars, _) = build_svg(&months, RankBy::Plays, "#5AA9FF", 5, &[]).unwrap();
         assert_eq!(
             periods(&bars),
             [
@@ -1241,7 +1299,7 @@ mod tests {
         let long = (1..=25)
             .map(|i| ((2023 + (i - 1) / 12, (i - 1) as u32 % 12 + 1), 1))
             .collect();
-        let (_, bars) = build_svg(&stats(long), RankBy::Plays, "#5AA9FF", 10, &[]).unwrap();
+        let (_, bars, _) = build_svg(&stats(long), RankBy::Plays, "#5AA9FF", 10, &[]).unwrap();
         assert_eq!(
             periods(&bars),
             [
@@ -1271,6 +1329,8 @@ mod tests {
             detail: None,
             ms: 60_000,
             plays: 7,
+            source: Source::Spotify,
+            id: None,
         };
         let info = |by, w| song_info(&m, "Repion", &item, by, 28.0, w);
         let parts = |a: &str, n: &str, u| (a.to_string(), n.to_string(), u);
