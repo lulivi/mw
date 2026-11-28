@@ -39,6 +39,11 @@ pub struct Ranked {
     pub ms: u64,
     /// Number of plays.
     pub plays: u64,
+    /// The service with the most plays of it (ties: Spotify).
+    pub source: Source,
+    /// Its most frequent ID on `source`: the Spotify track or YouTube video
+    /// for songs, the YouTube channel for artists. `None` when unknown.
+    pub id: Option<String>,
 }
 
 /// The recap of the filtered plays.
@@ -103,13 +108,20 @@ struct Acc {
     names: HashMap<String, u64>,
     /// How often each spelling of the detail (the artist, for songs) appeared.
     details: HashMap<String, u64>,
+    /// Plays on each service, and how often each ID appeared there.
+    sources: BTreeMap<Source, (u64, HashMap<String, u64>)>,
 }
 
 impl Acc {
     /// Adds one play to the totals.
-    fn add(&mut self, ms: u64, name: &str, detail: Option<&str>) {
+    fn add(&mut self, ms: u64, name: &str, detail: Option<&str>, src: Source, id: Option<&str>) {
         self.ms += ms;
         self.plays += 1;
+        let (plays, ids) = self.sources.entry(src).or_default();
+        *plays += 1;
+        if let Some(id) = id {
+            *ids.entry(id.to_string()).or_default() += 1;
+        }
         *self.names.entry(name.to_string()).or_default() += 1;
         if let Some(d) = detail {
             *self.details.entry(d.to_string()).or_default() += 1;
@@ -131,15 +143,26 @@ fn most_common(names: &HashMap<String, u64>) -> String {
 fn rank(map: HashMap<String, Acc>, top: usize, by: RankBy) -> Vec<Ranked> {
     let mut items: Vec<Ranked> = map
         .into_values()
-        .map(|a| Ranked {
-            name: most_common(&a.names),
-            detail: if a.details.is_empty() {
-                None
-            } else {
-                Some(most_common(&a.details))
-            },
-            ms: a.ms,
-            plays: a.plays,
+        .map(|a| {
+            // Most plays first; on a tie, the first service (Spotify).
+            let (source, (_, ids)) = a
+                .sources
+                .iter()
+                .min_by_key(|(s, (n, _))| (std::cmp::Reverse(*n), **s))
+                .expect("every entry has a play");
+            let (source, id) = (*source, (!ids.is_empty()).then(|| most_common(ids)));
+            Ranked {
+                name: most_common(&a.names),
+                detail: if a.details.is_empty() {
+                    None
+                } else {
+                    Some(most_common(&a.details))
+                },
+                ms: a.ms,
+                plays: a.plays,
+                source,
+                id,
+            }
         })
         .collect();
     items.sort_by(|a, b| {
@@ -203,14 +226,23 @@ pub fn compute(plays: &[Play], f: &Filters, top: usize, by: RankBy) -> Option<St
         first = Some(first.map_or(day, |d| d.min(day)));
         last = Some(last.map_or(day, |d| d.max(day)));
 
-        artists
-            .entry(artist_key(&p.artist))
-            .or_default()
-            .add(ms, &p.artist, None);
+        artists.entry(artist_key(&p.artist)).or_default().add(
+            ms,
+            &p.artist,
+            None,
+            p.source,
+            p.channel_id.as_deref(),
+        );
         tracks
             .entry(track_key(&p.artist, &p.track))
             .or_default()
-            .add(ms, &clean_title(&p.track), Some(&p.artist));
+            .add(
+                ms,
+                &clean_title(&p.track),
+                Some(&p.artist),
+                p.source,
+                p.spotify_id.as_deref().or(p.video_id.as_deref()),
+            );
     }
 
     if count == 0 {
@@ -332,6 +364,42 @@ mod tests {
         assert_eq!(s.top_artists[0].ms, 390_000);
         assert_eq!(s.top_tracks.len(), 1);
         assert_eq!(s.distinct_tracks, 1);
+    }
+
+    #[test]
+    fn links_to_the_service_with_most_plays() {
+        let with = |mut p: Play, spotify: Option<&str>, video: Option<&str>| {
+            p.spotify_id = spotify.map(Into::into);
+            p.video_id = video.map(Into::into);
+            p.channel_id = video.map(|_| "UC1".into());
+            p
+        };
+        let yt = |ts| play(ts, "A", "T", 210_000, Source::YouTubeMusic);
+        let sp = |ts| play(ts, "A", "T", 180_000, Source::Spotify);
+        let plays = vec![
+            with(sp("2025-01-10 10:00"), Some("s1"), None),
+            with(yt("2025-01-10 11:00"), None, Some("v1")),
+            with(yt("2025-01-10 12:00"), None, Some("v2")),
+            with(yt("2025-01-10 13:00"), None, Some("v2")),
+        ];
+        let s = compute(&plays, &filters(), 5, RankBy::Plays).unwrap();
+        let link = |r: &Ranked| (r.source, r.id.clone());
+        assert_eq!(
+            link(&s.top_tracks[0]),
+            (Source::YouTubeMusic, Some("v2".into()))
+        );
+        assert_eq!(
+            link(&s.top_artists[0]),
+            (Source::YouTubeMusic, Some("UC1".into()))
+        );
+
+        // A tie goes to Spotify; the basic history has no IDs.
+        let plays = vec![
+            sp("2025-01-10 10:00"),
+            with(yt("2025-01-10 11:00"), None, Some("v1")),
+        ];
+        let s = compute(&plays, &filters(), 5, RankBy::Plays).unwrap();
+        assert_eq!(link(&s.top_tracks[0]), (Source::Spotify, None));
     }
 
     #[test]

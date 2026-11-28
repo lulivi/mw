@@ -1028,6 +1028,7 @@ pub fn png(svg: &str, fallbacks: &[Vec<u8>]) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Source;
 
     /// A fallback font's file, from `assets/fonts/`.
     fn font(file: &str) -> Vec<u8> {
@@ -1076,6 +1077,8 @@ mod tests {
             detail: detail.map(Into::into),
             ms: 60_000,
             plays: 1,
+            source: Source::Spotify,
+            id: None,
         };
         let s = |artists, tracks| Stats {
             from: day,
@@ -1271,6 +1274,8 @@ mod tests {
             detail: None,
             ms: 60_000,
             plays: 7,
+            source: Source::Spotify,
+            id: None,
         };
         let info = |by, w| song_info(&m, "Repion", &item, by, 28.0, w);
         let parts = |a: &str, n: &str, u| (a.to_string(), n.to_string(), u);
