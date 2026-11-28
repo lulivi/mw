@@ -204,7 +204,7 @@ impl Session {
                 missing_fonts.join(", ")
             ));
         }
-        let (svg, bars) = render::build_svg(&stats, rank_by, accent, top, &fonts)?;
+        let (svg, bars, _) = render::build_svg(&stats, rank_by, accent, top, &fonts)?;
         if stats.estimated_ms > 0 {
             notes.push(format!(
                 "Estimated: {} of the {} minutes, from YouTube Music plays the song database doesn't know",
