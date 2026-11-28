@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/lulivi/mw/compare/v0.6.0...v0.7.0) - 2026-11-28
+
+### Added
+
+- *(web)* open top list entries on their service ([#94](https://github.com/lulivi/mw/pull/94))
+
 ## [0.6.0](https://github.com/lulivi/mw/compare/v0.5.0...v0.6.0) - 2026-11-26
 
 ### Added
