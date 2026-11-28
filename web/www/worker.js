@@ -106,7 +106,8 @@ async function create(o) {
   }
   const png = r.png;
   const bars = JSON.parse(r.bars);
-  postMessage({ type: "result", png, text: r.text, notes: r.notes, bars }, [png.buffer]);
+  const rows = JSON.parse(r.rows);
+  postMessage({ type: "result", png, text: r.text, notes: r.notes, bars, rows }, [png.buffer]);
   progress("");
 }
 

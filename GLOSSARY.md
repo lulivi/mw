@@ -63,3 +63,7 @@ _Avoid_: Theme color, highlight color
 **Fallback font**:
 A Noto font for the characters Inter lacks (Japanese, Arabic, emoji…), downloaded only when a name on the image needs it.
 _Avoid_: Extra font, CJK font
+
+**Service link**:
+Where a top list entry leads on the web page: the artist or song on Spotify or YouTube Music, on the service it was played on most.
+_Avoid_: URL, platform link

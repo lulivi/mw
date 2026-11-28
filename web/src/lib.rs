@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::{Datelike, NaiveDate};
 use chrono_tz::Tz;
-use mw::model::Play;
+use mw::model::{Play, Source};
 use mw::render::{self, fmt_count, fmt_int};
 use mw::sources::{self, Content, File};
 use mw::stats::{self, Filters, RankBy};
@@ -43,6 +43,11 @@ pub struct Recap {
     /// `x`, `y`, `w`, `h` in px of the image, `from` and `to` as `YYYY-MM-DD`
     /// and `label` naming the period: "February 2025" or "2025".
     pub bars: String,
+    /// The top lists' rows, artists first, as JSON: `[{x, y, w, h, name,
+    /// artist, service, id}]`, with `artist` only for songs, `service`
+    /// `spotify` or `youtube` (the one played most) and `id` its Spotify
+    /// track, YouTube video or YouTube channel, or `null`.
+    pub rows: String,
     /// The fallback fonts the image needs and the session lacks (see
     /// [`Session::add_font`]): their characters show as boxes.
     pub missing_fonts: Vec<String>,
@@ -204,7 +209,7 @@ impl Session {
                 missing_fonts.join(", ")
             ));
         }
-        let (svg, bars, _) = render::build_svg(&stats, rank_by, accent, top, &fonts)?;
+        let (svg, bars, rows) = render::build_svg(&stats, rank_by, accent, top, &fonts)?;
         if stats.estimated_ms > 0 {
             notes.push(format!(
                 "Estimated: {} of the {} minutes, from YouTube Music plays the song database doesn't know",
@@ -228,6 +233,23 @@ impl Session {
                     },
                 })
             }))
+            .to_string(),
+            rows: serde_json::Value::from_iter(
+                rows.iter()
+                    .zip(stats.top_artists.iter().chain(&stats.top_tracks))
+                    .map(|(r, e)| {
+                        serde_json::json!({
+                            "x": r.x, "y": r.y, "w": r.w, "h": r.h,
+                            "name": e.name,
+                            "artist": e.detail,
+                            "service": match e.source {
+                                Source::Spotify => "spotify",
+                                Source::YouTubeMusic => "youtube",
+                            },
+                            "id": e.id,
+                        })
+                    }),
+            )
             .to_string(),
             missing_fonts,
         })
@@ -320,6 +342,13 @@ mod tests {
         assert_eq!(bars[0]["from"], "2025-02-01");
         assert_eq!(bars[0]["to"], "2025-02-28");
         assert_eq!(bars[0]["label"], "February 2025");
+        let rows: serde_json::Value = serde_json::from_str(&r.rows).unwrap();
+        assert_eq!(rows[0]["name"], "A");
+        assert_eq!(rows[0]["artist"], serde_json::Value::Null);
+        assert_eq!(rows[1]["name"], "T");
+        assert_eq!(rows[1]["artist"], "A");
+        assert_eq!(rows[1]["service"], "youtube");
+        assert_eq!(rows[1]["id"], "dQw4w9WgXcQ");
         assert!(r.notes[0].contains("could not be downloaded"));
         assert!(
             r.notes[1].starts_with("Estimated: 4 of the 4 minutes"),
